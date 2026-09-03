@@ -223,6 +223,14 @@ class RunConfig:
     # --profile-flow ile acilir.
     profile_flow: bool = False
 
+    # Yalnizca bu isimlere dokun. Bos ise isim filtresi uygulanmaz.
+    # --targets dosya.txt ile doldurulur; dosyayi Snapchat'in kendi veri
+    # dokumunden tools/parse_snapchat_export.py uretir.
+    #
+    # Bu liste verildiginde bot arayuzden "bekliyor mu" diye tahmin etmeye
+    # calismaz: kimin bekledigi zaten Snapchat'in kendi verisinden geliyor.
+    target_names: List[str] = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # 5) TEK BIR TOPLU AYAR NESNESI

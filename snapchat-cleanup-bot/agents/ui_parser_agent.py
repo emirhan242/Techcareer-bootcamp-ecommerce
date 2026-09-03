@@ -245,7 +245,23 @@ class UIParserAgent:
             if row_key not in unique:
                 unique[row_key] = element
 
-        return sorted(unique.values(), key=lambda e: e.bounds[1])
+        result = sorted(unique.values(), key=lambda e: e.bounds[1])
+
+        # Hedef listesi verildiyse sadece oradaki isimlere dokunulur.
+        # Bu, "bekleyen mi arkadas mi" sorusunu arayuzden tahmin etmek
+        # yerine Snapchat'in kendi verisiyle cevaplamaya yariyor.
+        targets = getattr(self.run, "target_names", None)
+        if targets:
+            wanted = {normalize(name) for name in targets}
+            kept = [r for r in result if normalize(r.row_label) in wanted]
+            skipped = len(result) - len(kept)
+            if skipped:
+                self.logger.debug(
+                    f"{skipped} satir hedef listesinde olmadigi icin atlandi."
+                )
+            return kept
+
+        return result
 
     def _find_row_name(self, button: Dict, nodes: List[Dict]) -> str:
         """

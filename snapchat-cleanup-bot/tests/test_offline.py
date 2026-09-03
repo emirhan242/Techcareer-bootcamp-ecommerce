@@ -317,6 +317,86 @@ def main() -> int:
     )
 
     # ---------------------------------------------------------------
+    print("\n13) Hedef listesi: sadece verilen isimlere dokunulmali")
+    # Snapchat veri dokumunden gelen kesin liste. Arayuzden tahmin yok:
+    # listede olmayan hicbir kisiye dokunulmamali.
+    device = FakeProfileDevice(
+        people={
+            "hedef_01": "pending",
+            "arkadas_01": "friend",
+            "hedef_02": "pending",
+            "arkadas_02": "friend",
+        }
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    cfg.run.target_names = ["hedef_01", "hedef_02"]
+    cfg.ui.require_pending_marker = False        # kaynak zaten kesin
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    result = agent.execute()
+
+    results.append(
+        check(
+            "Sadece hedefler silindi",
+            sorted(device.removed) == ["hedef_01", "hedef_02"],
+            f"silinen={sorted(device.removed)}",
+        )
+    )
+    results.append(
+        check("Iptal sayaci dogru", result.cancelled == 2, f"iptal={result.cancelled}")
+    )
+
+    # Ayni listede buyuk/kucuk harf ve Turkce karakter farki tolere edilmeli.
+    device = FakeProfileDevice(people={"Zehra Dalkılıç": "pending", "Ayse": "friend"})
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    cfg.run.target_names = ["zehra dalkilic"]
+    cfg.ui.require_pending_marker = False
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    agent.execute()
+
+    results.append(
+        check(
+            "Harf/aksan farki eslesmeyi bozmadi",
+            device.removed == ["Zehra Dalkılıç"],
+            f"silinen={device.removed}",
+        )
+    )
+
+    # ---------------------------------------------------------------
+    print("\n14) Veri dokumu ayristirici")
+    from tools.parse_snapchat_export import extract_pending
+
+    export = {
+        "Friends": [{"Username": "kabul_eden", "Display Name": "Kabul Eden"}],
+        "Sent Friend Requests": [
+            {"Username": "bekleyen_a", "Display Name": "Bekleyen A"},
+            {"Username": "bekleyen_b", "Display Name": "Bekleyen B"},
+        ],
+        "Deleted Friends": [{"Username": "silinmis_istek"}],
+    }
+    sections = extract_pending(export)
+    names = set()
+    for values in sections.values():
+        names |= values
+
+    results.append(
+        check(
+            "Bekleyen istekler cikarildi",
+            {"bekleyen_a", "bekleyen_b", "Bekleyen A", "Bekleyen B"} <= names,
+            f"bulunan={sorted(names)}",
+        )
+    )
+    results.append(
+        check("Kabul etmis arkadaslar alinmadi", "kabul_eden" not in names)
+    )
+    results.append(
+        check("Silinmis kayitlar alinmadi", "silinmis_istek" not in names)
+    )
+
+    # ---------------------------------------------------------------
     passed = sum(1 for r in results if r)
     total = len(results)
     print("\n" + "=" * 55)

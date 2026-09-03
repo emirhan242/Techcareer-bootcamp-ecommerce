@@ -201,6 +201,7 @@ işlem yapmak yerine güne yayman daha güvenli.
 | `--pair ADRES KOD` | Android 11+ kablosuz hata ayıklama eşleştirmesi |
 | `--profile-flow` | Listede "Bekliyor" butonu olmayan sürümler için profil akışı |
 | `--inspect-profile [N]` | Tanı: N. kişinin profilini açıp metinlerini yazar |
+| `--targets DOSYA` | Yalnızca dosyadaki isimlere dokun (önerilen yöntem) |
 
 Çalışmayı istediğin an `Ctrl+C` ile durdurabilirsin, bot o ana kadarki
 özeti yazdırıp güvenli şekilde kapanır.
@@ -234,7 +235,47 @@ Bot `--profile-flow` ve `--inspect-profile` çalıştırıldığında bu geçiş
 kendisi yapmaya çalışır (`skills/open_recent_added.py`). Üç nokta butonunu
 bulamazsa uyarır; o zaman listeyi elle açıp komutu tekrar çalıştır.
 
-### Önce tehlikeyi anla
+### Önerilen yol: Snapchat'in kendi verisini kullan
+
+Arayüz bir kaydın bekleyen istek mi yoksa isteği kabul etmiş bir arkadaş mı
+olduğunu güvenilir şekilde söylemiyor — ikisi aynı listede, aynı menüyle
+siliniyor. Arayüzden tahmin etmek yerine kaynağa gidiyoruz: Snapchat bu
+ayrımı kendi veri dökümünde açıkça veriyor.
+
+**1. Dökümü indir**
+
+1. [accounts.snapchat.com](https://accounts.snapchat.com) → giriş yap
+2. **Verilerim** (My Data) → **Verilerimi Gönder**
+3. E-postana gelen zip'i indir
+
+**2. Bekleyenleri çıkar**
+
+```bash
+python tools/parse_snapchat_export.py mydata.zip
+```
+
+Bu, `hedefler.txt` üretir — her satırda bir isim. Dosyayı açıp gözden geçir,
+silinmesini istemediğin varsa satırı sil.
+
+**3. Deneme modunda çalıştır**
+
+```bash
+python main.py --profile-flow --targets hedefler.txt
+```
+
+Bot artık listedeki **hiçbir başka kişiye dokunmaz**; kimin beklediği
+Snapchat'in kendi verisinden geldiği için arayüzden tahmin etmesi de
+gerekmez.
+
+**4. Gerçek mod, küçük partiyle**
+
+```bash
+python main.py --profile-flow --targets hedefler.txt --live --max 5
+```
+
+---
+
+### Hedef listesi olmadan: tehlikeyi anla
 
 O liste **bekleyen istekleri ve isteği kabul etmiş gerçek arkadaşları bir
 arada** gösteriyor, ikisi de aynı menüden siliniyor. Ayrım yapmadan çalışan
@@ -244,7 +285,9 @@ Bot bu yüzden profili açtıktan sonra bekleyen olduğunu gösteren bir yazı
 görmeden silmiyor; göremezse geri çıkıp o kişiyi atlıyor
 (`UIConfig.profile_pending_markers`, `require_pending_marker`).
 
-### Kullanım sırası
+`--targets` kullanmıyorsan bot bekleyeni arkadaştan ayırt etmek zorunda ve
+bunu profildeki bir yazıya bakarak yapıyor. O yazının sürümünden sürüme
+değiştiği için önce bulman gerekiyor:
 
 **1. Profildeki gerçek yazıları öğren.** Listeyi ekrana getir ve:
 

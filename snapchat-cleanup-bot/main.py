@@ -94,6 +94,14 @@ def parse_args() -> argparse.Namespace:
              "gormedigi kisiyi atlar.",
     )
     parser.add_argument(
+        "--targets",
+        metavar="DOSYA",
+        default=None,
+        help="Yalnizca bu dosyadaki isimlere dokun (her satirda bir isim). "
+             "Dosyayi Snapchat'in kendi veri dokumunden uret: "
+             "python tools/parse_snapchat_export.py mydata.zip",
+    )
+    parser.add_argument(
         "--inspect-profile",
         nargs="?",
         type=int,
@@ -105,6 +113,35 @@ def parse_args() -> argparse.Namespace:
              "Profil akisindaki gercek buton yazilarini ogrenmek icin.",
     )
     return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Hedef isim listesi
+# ---------------------------------------------------------------------------
+def load_targets(path: str) -> list:
+    """
+    Her satirinda bir isim olan dosyayi okur. Bos satirlar ve '#' ile
+    baslayan yorum satirlari atlanir.
+    """
+    from pathlib import Path
+
+    file = Path(path)
+    if not file.exists():
+        raise SystemExit(
+            f"Hedef dosyasi bulunamadi: {path}\n"
+            "Snapchat veri dokumunden uretmek icin:\n"
+            "  python tools/parse_snapchat_export.py mydata.zip"
+        )
+
+    names = []
+    for line in file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            names.append(line)
+
+    if not names:
+        raise SystemExit(f"Hedef dosyasi bos: {path}")
+    return names
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +159,11 @@ def apply_args(args: argparse.Namespace) -> None:
         CONFIG.run.save_hierarchy = True
     if args.profile_flow:
         CONFIG.run.profile_flow = True
+    if args.targets:
+        CONFIG.run.target_names = load_targets(args.targets)
+        # Kimin bekledigi artik Snapchat'in kendi verisinden biliniyor;
+        # arayuzdeki isarete bakmaya gerek yok.
+        CONFIG.ui.require_pending_marker = False
     # --live verilmedikce her zaman deneme modunda kal.
     CONFIG.run.dry_run = not args.live
 
