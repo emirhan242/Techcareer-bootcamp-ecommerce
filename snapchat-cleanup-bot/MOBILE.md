@@ -123,20 +123,41 @@ https://github.com/termux/termux-app/releases
 ```bash
 pkg update && pkg upgrade
 pkg install python git android-tools
+```
+
+Sonra derlenmesi sorunlu olan iki kütüphaneyi pip yerine `pkg` ile kur.
+`uiautomator2` içeride `lxml` istiyor, `lxml`i Termux'ta pip kaynaktan
+derlemeye çalışır ve `libxml2 and libxslt development packages` hatasıyla
+düşer. Hazır derlenmiş paketleri kurunca pip onları olduğu gibi kullanır:
+
+```bash
+pkg install libxml2 libxslt python-lxml python-pillow
+```
+
+Ardından botun kendi bağımlılıkları:
+
+```bash
 pip install uiautomator2 adbutils
 ```
 
-Ekran görüntüsü de istiyorsan (`--debug` için):
-
-```bash
-pkg install python-pillow
-```
+Burada `pip install -r requirements.txt` kullanma; o dosya Pillow'u da pip
+üzerinden kurmaya çalışır ve Termux'ta aynı derleme sorununa girersin.
+Yukarıdaki iki komut aynı işi görüyor.
 
 ### 3. Projeyi indir
 
 ```bash
 git clone https://github.com/emirhan242/Techcareer-bootcamp-ecommerce
 cd Techcareer-bootcamp-ecommerce/snapchat-cleanup-bot
+```
+
+`cd` "No such file or directory" diyorsa bot kodu henüz `main`e merge
+edilmemiş demektir, geliştirme dalını çek:
+
+```bash
+cd ~/Techcareer-bootcamp-ecommerce
+git checkout claude/snapchat-cancel-pending-requests-uv1uk2
+cd snapchat-cleanup-bot
 ```
 
 ### 4. Kablosuz hata ayıklamayı aç ve kendine bağlan
@@ -258,6 +279,16 @@ Bazı telefonlarda "bilinmeyen kaynaklardan uygulama yükleme" izni gerekir.
 
 **Termux'ta `adb: command not found`**
 `pkg install android-tools` çalıştır.
+
+**Termux'ta `Failed to build lxml` / `libxml2 and libxslt development
+packages are installed`**
+pip lxml'i kaynaktan derlemeye çalışıyor. Hazır paketleri kur, sonra pip'i
+tekrar çalıştır:
+
+```bash
+pkg install libxml2 libxslt python-lxml
+pip install uiautomator2 adbutils
+```
 
 **Termux'ta `adb pair` başarısız**
 Eşleştirme penceresi kapanmış olabilir, kod tek kullanımlık. Bölünmüş ekran
