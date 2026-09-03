@@ -186,8 +186,32 @@ adb devices
 ```
 
 Bir zorluk var: eşleştirme ekranını açıp Termux'a geçmen gerekiyor, ekran
-değişince pencere kapanabiliyor. Bölünmüş ekran (split screen) kullanırsan
-ikisini yan yana görürsün, iş çok kolaylaşır.
+değişince pencere kapanabiliyor. Kapanırsa `adb pair` şunu verir:
+
+```
+error: protocol fault (couldn't read status message): Success
+```
+
+Bu "kod geçersiz" demek, yazım hatası değil. İki çözüm var:
+
+- **Bölünmüş ekran:** Son uygulamalar > Termux kartının üstündeki ikona
+  dokun > Bölünmüş ekran. Alt yarıya Ayarlar'ı al. İkisi aynı anda ekranda
+  durduğu için pencere kapanmıyor.
+- **Termux:Float:** F-Droid'deki bu eklenti terminali diğer uygulamaların
+  üzerinde küçük bir pencerede açıyor, eşleştirme ekranına hiç dokunmuyorsun.
+
+Her denemede port ve kod yeniden üretiliyor, eskisini tekrar kullanma.
+
+### Kısayol: bağlantı script'i
+
+Yukarıdaki iki komutu elle yazmak yerine depodaki script'i kullanabilirsin.
+Loopback ile Wi-Fi adresini sırayla dener, bağlantı portunu mDNS ile kendi
+bulur:
+
+```bash
+./tools/termux_connect.sh 37529 219263   # eşleştirme portu ve kodu
+./tools/termux_connect.sh                # eşleşme yapıldıysa sadece bağlan
+```
 
 ### 5. Çalıştır
 
