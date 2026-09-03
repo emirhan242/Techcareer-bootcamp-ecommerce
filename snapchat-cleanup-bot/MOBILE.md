@@ -164,6 +164,13 @@ cd snapchat-cleanup-bot
 
 Geliştirici seçenekleri > **Kablosuz hata ayıklama** açık olsun.
 
+Android bu özelliği yalnızca telefon bir **Wi-Fi ağına bağlıyken** açıyor;
+sadece mobil veri varken seçenek gri kalır veya eşleştirme adresi vermez.
+Etrafta ağ yoksa başka bir telefonun kişisel erişim noktasını açıp bu
+telefonu ona bağlaman yeterli. O ağın internete çıkması gerekmiyor: bot
+`127.0.0.1` üzerinden, yani telefonun kendi içinden bağlanıyor, Wi-Fi
+sadece Android'in özelliği etkinleştirmesi için duruyor.
+
 **Cihazı eşleştirme koduyla eşleştir**e dokun. Çıkan IP:PORT ve kodla,
 Termux'ta (telefon kendi kendine eşleşiyor, IP yerine 127.0.0.1 yaz):
 
@@ -276,6 +283,11 @@ python -m uiautomator2 init
 ```
 
 Bazı telefonlarda "bilinmeyen kaynaklardan uygulama yükleme" izni gerekir.
+
+**Kablosuz hata ayıklama seçeneği gri / açılmıyor**
+Telefon Wi-Fi'a bağlı değil. Mobil veri bu özellik için yetmiyor. Herhangi
+bir Wi-Fi ağına (başka bir telefonun erişim noktası dahil) bağlan, seçenek
+açılacaktır.
 
 **Termux'ta `adb: command not found`**
 `pkg install android-tools` çalıştır.
