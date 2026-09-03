@@ -26,6 +26,7 @@ from agents.action_agent import ActionAgent
 from agents.environment_agent import EnvironmentAgent
 from agents.ui_parser_agent import UIParserAgent
 from config import CONFIG
+from skills.open_recent_added import open_recent_added
 from utils.logger import banner, get_logger
 
 
@@ -290,6 +291,12 @@ def main() -> int:
 
     if args.scan:
         return run_scan(parser, logger)
+
+    # Profil akisinda Snapchat "Arkadas Ekle" ekraninda aciliyor; bekleyen
+    # istekler orada degil, uc nokta menusunun altindaki listede. Once oraya
+    # gecmeyi dene, olmazsa kullanici elle acsin.
+    if CONFIG.run.profile_flow or args.inspect_profile is not None:
+        open_recent_added(device, CONFIG.ui, logger=logger)
 
     if args.inspect_profile is not None:
         return run_inspect_profile(parser, device, args.inspect_profile, logger)

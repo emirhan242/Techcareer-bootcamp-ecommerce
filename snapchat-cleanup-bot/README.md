@@ -30,6 +30,7 @@ güncelleniyor, akış mantığına dokunmuyorsun.
 | Skill | `skills/find_and_cancel_requests.py` | İstek bulma ve iptal etme |
 | Skill | `skills/human_like_scroll.py` | Doğal kaydırma hareketi |
 | Skill | `skills/random_delay_and_cooldown.py` | Bekleme ve mola mantığı |
+| Skill | `skills/open_recent_added.py` | "En Son Eklenenler" listesine gitme |
 
 ### Klasör yapısı
 
@@ -49,6 +50,7 @@ snapchat-cleanup-bot/
 │   ├── adb_connect.py
 │   ├── find_and_cancel_requests.py
 │   ├── human_like_scroll.py
+│   ├── open_recent_added.py
 │   └── random_delay_and_cooldown.py
 ├── utils/
 │   ├── __init__.py
@@ -217,6 +219,20 @@ liste > kişi > Arkadaşlığı Yönet > Arkadaşı Sil > onay
 ```
 
 Bot bu yolu `--profile-flow` ile izler.
+
+### Ekran bulma
+
+Snapchat "Arkadaş Ekle" ekranında açılıyor. Oradaki kişiler **önerilerdir**
+(yanlarında sarı "+ Ekle" butonu var), senin istek gönderdiklerin değil.
+Doğru liste sağ üstteki üç nokta menüsünün altında:
+
+```
+Arkadaş Ekle > ⋯ > En Son Eklediğim Arkadaşlar
+```
+
+Bot `--profile-flow` ve `--inspect-profile` çalıştırıldığında bu geçişi
+kendisi yapmaya çalışır (`skills/open_recent_added.py`). Üç nokta butonunu
+bulamazsa uyarır; o zaman listeyi elle açıp komutu tekrar çalıştır.
 
 ### Önce tehlikeyi anla
 

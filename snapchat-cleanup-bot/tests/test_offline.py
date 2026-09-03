@@ -19,6 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agents.action_agent import ActionAgent          # noqa: E402
 from agents.ui_parser_agent import UIParserAgent     # noqa: E402
 from config import AppConfig                         # noqa: E402
+from skills.open_recent_added import (                # noqa: E402
+    on_recent_list,
+    open_recent_added,
+)
 from tests.fake_device import FakeDevice, FakeProfileDevice   # noqa: E402
 from utils.logger import get_logger                  # noqa: E402
 
@@ -270,6 +274,46 @@ def main() -> int:
 
     results.append(
         check("Deneme modunda silme yok", device.removed == [], f"silinen={device.removed}")
+    )
+
+    # ---------------------------------------------------------------
+    print("\n12) Navigasyon: 'Arkadas Ekle' ekranindan hedef listeye gecis")
+    # Snapchat oneri ekraninda aciliyor. O ekrandaki kisiler istek
+    # gonderdiklerimiz degil, onerilerdir; orada calismak yanlis olur.
+    device = FakeProfileDevice(
+        people={"bekleyen_01": "pending"}, start_on_add_friends=True
+    )
+    cfg = fast_config(dry_run=True)
+
+    results.append(
+        check(
+            "Baslangicta hedef listede degiliz",
+            not on_recent_list(device, cfg.ui),
+            f"ekran={device.screen}",
+        )
+    )
+
+    reached = open_recent_added(device, cfg.ui, logger=logger,
+                                menu_wait=0.001, list_wait=0.001)
+    results.append(check("Hedef listeye gecildi", reached, f"ekran={device.screen}"))
+    results.append(
+        check(
+            "Oneri ekranindaki kisilere dokunulmadi",
+            device.removed == [],
+            f"silinen={device.removed}",
+        )
+    )
+
+    # Zaten listedeyken bosuna dokunmamali.
+    clicks_before = device.clicks
+    open_recent_added(device, cfg.ui, logger=logger,
+                      menu_wait=0.001, list_wait=0.001)
+    results.append(
+        check(
+            "Zaten listedeyken tiklama yapilmadi",
+            device.clicks == clicks_before,
+            f"tiklama={device.clicks - clicks_before}",
+        )
     )
 
     # ---------------------------------------------------------------

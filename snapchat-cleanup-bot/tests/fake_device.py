@@ -212,11 +212,19 @@ class FakeProfileDevice:
     kapisi calismazsa bot gercek arkadaslari da siler.
     """
 
-    def __init__(self, people: dict, pending_text: str = "Bekliyor"):
+    def __init__(
+        self,
+        people: dict,
+        pending_text: str = "Bekliyor",
+        start_on_add_friends: bool = False,
+    ):
         self.people = dict(people)
         self.pending_text = pending_text
 
-        self.screen = "list"          # list | profile | menu | dialog
+        # start_on_add_friends=True ise cihaz Snapchat'in acildigi "Arkadas
+        # Ekle" ekraninda baslar; hedef listeye uc nokta menusunden gecilir.
+        self.screen = "add_friends" if start_on_add_friends else "list"
+        # add_friends | overflow | list | profile | menu | dialog
         self.current: Optional[str] = None
         self.removed: List[str] = []
         self.clicks = 0
@@ -242,7 +250,21 @@ class FakeProfileDevice:
     def dump_hierarchy(self, compressed: bool = True) -> str:
         parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<hierarchy>"]
 
-        if self.screen == "list":
+        if self.screen == "add_friends":
+            parts.append(self._node("Arkadas Ekle", 40, 120, 700, 200, clickable=False))
+            parts.append(self._node("Arkadas Bul", 40, 260, 700, 340, clickable=False))
+            # Sag ustteki uc nokta ikonu: tiklanabilir ama yazisi yok.
+            parts.append(self._node("", 950, 120, 1050, 220))
+            for index, name in enumerate(["oneri_1", "oneri_2"]):
+                top = FIRST_ROW_TOP + index * ROW_HEIGHT
+                parts.append(self._node(name, 120, top, 700, top + 100))
+                parts.append(self._node("Ekle", 800, top, 980, top + 100))
+
+        elif self.screen == "overflow":
+            parts.append(self._node("En Son Eklediğim Arkadaşlar", 100, 400, 900, 500))
+            parts.append(self._node("Arkadaslarimi Davet Et", 100, 520, 900, 620))
+
+        elif self.screen == "list":
             parts.append(
                 self._node("En Son Eklenenler", 40, 120, 700, 200, clickable=False)
             )
@@ -280,6 +302,11 @@ class FakeProfileDevice:
 
     def click(self, x: int, y: int) -> None:
         self.clicks += 1
+        if self.screen == "add_friends":
+            # Sadece sag ustteki uc nokta ikonu menuyu acar.
+            if x >= 950 and y <= 220:
+                self.screen = "overflow"
+            return
         if self.screen != "list":
             return
         index = (y - FIRST_ROW_TOP) // ROW_HEIGHT
@@ -293,7 +320,12 @@ class FakeProfileDevice:
         if key != "back":
             return
         self.back_presses += 1
-        order = {"dialog": "menu", "menu": "profile", "profile": "list"}
+        order = {
+            "dialog": "menu",
+            "menu": "profile",
+            "profile": "list",
+            "overflow": "add_friends",
+        }
         self.screen = order.get(self.screen, "list")
         if self.screen == "list":
             self.current = None
@@ -307,6 +339,8 @@ class FakeProfileDevice:
         return False
 
     def _active_labels(self) -> List[str]:
+        if self.screen == "overflow":
+            return ["En Son Eklediğim Arkadaşlar", "Arkadaslarimi Davet Et"]
         if self.screen == "profile":
             return ["Arkadasligi Yonet"]
         if self.screen == "menu":
@@ -317,7 +351,9 @@ class FakeProfileDevice:
 
     def _confirm_dialog(self) -> None:
         """_Selector.click() buraya duser: ekrandaki butona basilmis sayilir."""
-        if self.screen == "profile":
+        if self.screen == "overflow":
+            self.screen = "list"
+        elif self.screen == "profile":
             self.screen = "menu"
         elif self.screen == "menu":
             self.screen = "dialog"

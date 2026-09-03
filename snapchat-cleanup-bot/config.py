@@ -73,8 +73,9 @@ class UIConfig:
     # DIKKAT: Turkce'de "Iptal" hem onay hem vazgec anlamina gelebiliyor.
     # Bu yuzden onay listesinde "Iptal Et" (fiil), burada "Iptal" (tek basina) var.
     dismiss_labels: List[str] = field(default_factory=lambda: [
-        "Vazgec", "Vazgeç", "Kapat", "Geri",
+        "Vazgec", "Vazgeç", "Kapat", "Geri", "Tamamlandi", "Tamamlandı", "Bitti",
         "Cancel", "Close", "Dismiss", "Not Now", "Simdi Degil", "Şimdi Değil",
+        "Done",
     ])
 
     # Bekleyen istekler ekranini bulmak icin aranan baslik metinleri.
@@ -130,6 +131,32 @@ class UIConfig:
     # Guvenlik kapisi kapatilabilir ama VARSAYILAN OLARAK ACIK kalmali.
     # False yapmak "listedeki herkesi sil" demektir.
     require_pending_marker: bool = True
+
+    # -- "En Son Eklenenler" listesine gitme ------------------------------
+    # Snapchat "Arkadas Ekle" ekraninda aciliyor; bekleyen istekler orada
+    # degil, sag ustteki uc nokta menusunun altindaki listede duruyor.
+
+    # Hedef listenin basligi. Bot bunu gorurse dogru ekranda sayar.
+    recent_list_titles: List[str] = field(default_factory=lambda: [
+        "En Son Eklenenler", "En Son Eklediklerim", "Son Eklenenler",
+        "Recently Added",
+    ])
+
+    # Uc nokta menusunu acan butonun content-desc / text degeri.
+    # Ikon oldugu icin yazisi yok, erisilebilirlik etiketiyle bulunuyor.
+    # Kendi surumundeki degeri ogrenmek icin: python main.py --scan
+    overflow_button_labels: List[str] = field(default_factory=lambda: [
+        "Daha Fazla", "Daha fazla", "Diger", "Diğer", "Menu", "Menü",
+        "Secenekler", "Seçenekler", "More", "More options", "Options",
+        "Overflow",
+    ])
+
+    # Uc nokta menusunde hedef listeyi acan satir.
+    recent_list_menu_labels: List[str] = field(default_factory=lambda: [
+        "En Son Eklediğim Arkadaşlar", "En Son Ekledigim Arkadaslar",
+        "En Son Eklenenler", "Son Eklenenler",
+        "Recently Added", "Recently Added Friends",
+    ])
 
 
 # ---------------------------------------------------------------------------
