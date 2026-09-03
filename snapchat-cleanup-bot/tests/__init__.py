@@ -1,0 +1,1 @@
+"""Emulatorsuz calisan dogrulama testleri."""

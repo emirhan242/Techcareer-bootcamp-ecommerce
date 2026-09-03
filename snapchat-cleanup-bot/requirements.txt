@@ -1,0 +1,10 @@
+# Android arayuzunu ADB uzerinden kontrol eden ana kutuphane.
+# Cihaza otomatik olarak ATX-agent kurar ve XML arayuz agacini okur.
+uiautomator2>=3.2.0
+
+# uiautomator2'nin cihazla haberlesmek icin kullandigi ADB istemcisi.
+# Genelde bagimlilik olarak zaten gelir, surum sabitlemek icin acikca yazildi.
+adbutils>=2.5.0
+
+# Ekran goruntusu kaydetme (--debug modunda kullanilir).
+Pillow>=10.0.0
