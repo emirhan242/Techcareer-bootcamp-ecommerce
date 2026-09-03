@@ -28,18 +28,25 @@ from utils.logger import get_logger                  # noqa: E402
 
 
 def fast_config(dry_run: bool, max_cancellations: int = 0) -> AppConfig:
-    """Testler icin beklemeleri neredeyse sifirlanmis ayar nesnesi."""
+    """
+    Testler icin beklemeleri neredeyse sifirlanmis ayar nesnesi.
+
+    TimingConfig'teki her sure alanini tek tek yazmak yerine hepsini
+    dolasiyoruz: yeni bir bekleme ayari eklendiginde testler kendiliginden
+    hizli kalsin, kimse listeye eklemeyi unutunca suite dakikalara
+    uzamasin. Sadece anlamli olmasi gereken birkac deger elle veriliyor.
+    """
     cfg = copy.deepcopy(AppConfig())
-    cfg.timing.click_delay_min = 0.001
+
+    for name, value in vars(cfg.timing).items():
+        if isinstance(value, float):
+            setattr(cfg.timing, name, 0.001)
+
     cfg.timing.click_delay_max = 0.002
-    cfg.timing.cooldown_every = 1000            # testte mola istemiyoruz
-    cfg.timing.cooldown_seconds = 0.001
-    cfg.timing.dialog_wait = 0.05
-    cfg.timing.scroll_settle_min = 0.001
     cfg.timing.scroll_settle_max = 0.002
-    cfg.timing.profile_open_wait = 0.001
-    cfg.timing.profile_step_wait = 0.001
-    cfg.timing.profile_back_wait = 0.001
+    cfg.timing.dialog_wait = 0.05               # dialog aramasi bir tur donsun
+    cfg.timing.cooldown_every = 1000            # testte mola istemiyoruz
+
     cfg.run.dry_run = dry_run
     cfg.run.max_cancellations = max_cancellations
     cfg.run.max_empty_scrolls = 2
@@ -394,6 +401,114 @@ def main() -> int:
     )
     results.append(
         check("Silinmis kayitlar alinmadi", "silinmis_istek" not in names)
+    )
+
+    # ---------------------------------------------------------------
+    print("\n15) Uzun basma akisi: basili tut > Arkadasligi Yonet > Kaldir > onay")
+    device = FakeProfileDevice(people={"bekleyen_01": "pending", "bekleyen_02": "pending"})
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    result = agent.execute()
+
+    results.append(
+        check(
+            "Menu basili tutarak acildi",
+            device.long_presses >= 2,
+            f"basili_tutma={device.long_presses}",
+        )
+    )
+    results.append(
+        check(
+            "Basili tutma suresi ayardan geldi",
+            device.last_press_seconds == cfg.timing.long_press_seconds,
+            f"sure={device.last_press_seconds}",
+        )
+    )
+    results.append(
+        check(
+            "Iki kayit da kaldirildi",
+            sorted(device.removed) == ["bekleyen_01", "bekleyen_02"],
+            f"silinen={sorted(device.removed)}",
+        )
+    )
+    results.append(
+        check("Zararli islem yapilmadi", device.harmful_actions == [],
+              f"zararli={device.harmful_actions}")
+    )
+
+    # ---------------------------------------------------------------
+    print("\n16) Esnek metin: 'Kaldir' yerine 'Arkadasi Kaldir' yazsa da bulunmali")
+    device = FakeProfileDevice(
+        people={"bekleyen_01": "pending"}, remove_text="Arkadaşı Kaldır"
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    ActionAgent(device, parser, cfg, logger).execute()
+
+    results.append(
+        check("Farkli yazim tanindi", device.removed == ["bekleyen_01"],
+              f"silinen={device.removed}")
+    )
+
+    # ---------------------------------------------------------------
+    print("\n17) Yedek tiklama: metin tutmazsa koordinatla, ama tehlikeli satira asla")
+    # Silme butonunun yazisi hicbir listede yok -> yedek devreye girer.
+    # Menudeki 2. satir "Engelle". Yedek oraya basmayi REDDETMELI.
+    device = FakeProfileDevice(
+        people={"bekleyen_01": "pending"}, remove_text="Bilinmeyen Kelime"
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    cfg.ui.remove_fallback_enabled = True
+    cfg.ui.remove_fallback_row_index = 2          # "Engelle"
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    ActionAgent(device, parser, cfg, logger).execute()
+
+    results.append(
+        check("Engelle satirina basilmadi", device.harmful_actions == [],
+              f"zararli={device.harmful_actions}")
+    )
+    results.append(
+        check("Hicbir kayit silinmedi", device.removed == [],
+              f"silinen={device.removed}")
+    )
+
+    # Ayni durumda dogru satir (4.) verilirse yedek calismali.
+    device = FakeProfileDevice(
+        people={"bekleyen_01": "pending"}, remove_text="Bilinmeyen Kelime"
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    cfg.ui.remove_fallback_enabled = True
+    cfg.ui.remove_fallback_row_index = 4          # silme satiri
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    ActionAgent(device, parser, cfg, logger).execute()
+
+    results.append(
+        check("Dogru satirda yedek tiklama calisti",
+              device.removed == ["bekleyen_01"], f"silinen={device.removed}")
+    )
+    results.append(
+        check("Yedek yolunda da zararli islem yok", device.harmful_actions == [],
+              f"zararli={device.harmful_actions}")
+    )
+
+    # Yedek kapaliyken hicbir sey olmamali.
+    device = FakeProfileDevice(
+        people={"bekleyen_01": "pending"}, remove_text="Bilinmeyen Kelime"
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    cfg.ui.remove_fallback_enabled = False
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    ActionAgent(device, parser, cfg, logger).execute()
+
+    results.append(
+        check("Yedek kapaliyken tiklama yok", device.removed == [],
+              f"silinen={device.removed}")
     )
 
     # ---------------------------------------------------------------

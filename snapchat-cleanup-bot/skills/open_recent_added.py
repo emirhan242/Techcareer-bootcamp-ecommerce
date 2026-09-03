@@ -27,37 +27,11 @@ from __future__ import annotations
 import time
 from typing import List, Optional, Tuple
 
-from skills.find_and_cancel_requests import matches_any, screen_texts
-
-
-def _clickable_nodes(device) -> List[dict]:
-    """Ekrandaki tiklanabilir dugumleri sade bir sozluk listesi olarak dondurur."""
-    from xml.etree import ElementTree
-    import re
-
-    try:
-        root = ElementTree.fromstring(device.dump_hierarchy(compressed=True))
-    except Exception:  # noqa: BLE001
-        return []
-
-    nodes = []
-    for node in root.iter("node"):
-        match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", "") or "")
-        if not match:
-            continue
-        left, top, right, bottom = (int(g) for g in match.groups())
-        if right <= left or bottom <= top:
-            continue
-        nodes.append(
-            {
-                "text": (node.get("text") or "").strip(),
-                "desc": (node.get("content-desc") or "").strip(),
-                "clickable": node.get("clickable") == "true",
-                "bounds": (left, top, right, bottom),
-                "center": ((left + right) // 2, (top + bottom) // 2),
-            }
-        )
-    return nodes
+from skills.find_and_cancel_requests import (
+    clickable_nodes,
+    matches_any,
+    screen_texts,
+)
 
 
 def on_recent_list(device, ui_config) -> bool:
@@ -76,7 +50,7 @@ def _find_overflow_button(device, ui_config) -> Optional[Tuple[int, int]]:
     kosesindeki tiklanabilir, yazisiz dugumu aday olarak dondurur -
     uc nokta ikonu orada duruyor.
     """
-    nodes = _clickable_nodes(device)
+    nodes = clickable_nodes(device)
 
     for node in nodes:
         label = node["desc"] or node["text"]

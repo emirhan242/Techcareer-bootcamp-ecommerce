@@ -63,6 +63,7 @@ class UIConfig:
         # Turkce
         "Istegi Iptal Et", "İsteği İptal Et", "Iptal Et", "İptal Et",
         "Arkadasi Kaldir", "Arkadaşı Kaldır", "Kaldir", "Kaldır",
+        "Arkadasi Sil", "Arkadaşı Sil",
         "Evet", "Tamam", "Sil",
         # Ingilizce
         "Cancel Request", "Remove Friend", "Remove", "Unadd",
@@ -107,11 +108,25 @@ class UIConfig:
 
     # Menu icindeki silme/geri cekme butonu.
     remove_friend_labels: List[str] = field(default_factory=lambda: [
-        "Arkadasi Sil", "Arkadaşı Sil", "Arkadasi Kaldir", "Arkadaşı Kaldır",
+        "Kaldir", "Kaldır", "Arkadasi Kaldir", "Arkadaşı Kaldır",
+        "Arkadasi Sil", "Arkadaşı Sil",
         "Arkadasliktan Cikar", "Arkadaşlıktan Çıkar", "Istegi Geri Cek",
         "İsteği Geri Çek",
-        "Remove Friend", "Unadd", "Cancel Request", "Remove",
+        "Remove", "Remove Friend", "Unadd", "Cancel Request",
     ])
+
+    # Menude ASLA tiklanmamasi gereken satirlar. Koordinat tabanli yedek
+    # tiklama bu satirlardan birine denk gelirse islem yapilmaz.
+    # "Arkadasi Sil"in hemen ustunde "Engelle" ve "Sikayet Et" duruyor;
+    # yanlis satira basmak birini engellemek ya da sikayet etmek demek.
+    dangerous_menu_labels: List[str] = field(default_factory=lambda: [
+        "Engelle", "Sikayet Et", "Şikayet Et", "Bildir",
+        "Block", "Report", "Report Account",
+    ])
+
+    # Etiketle bulunamazsa menudeki N. satira tikla (1 tabanli).
+    remove_fallback_enabled: bool = True
+    remove_fallback_row_index: int = 1
 
     # DIKKAT - GUVENLIK KAPISI.
     # "En Son Eklenenler" listesinde hem istegi kabul etmis arkadaslar hem de
@@ -177,6 +192,15 @@ class TimingConfig:
     # Onay dialogunun ekrana gelmesi icin beklenecek sure.
     dialog_wait: float = 3.0
 
+    # Onay penceresi beklenirken iki yoklama arasindaki sure.
+    dialog_poll: float = 0.3
+
+    # Butona bastiktan sonra ekranin tepki vermesi icin beklenecek sure.
+    click_settle: float = 0.8
+
+    # Islemin tuttugunu dogrulamadan once beklenecek sure.
+    verify_wait: float = 0.7
+
     # Kaydirma sonrasi ekranin oturmasi icin beklenecek sure araligi.
     scroll_settle_min: float = 0.8
     scroll_settle_max: float = 1.8
@@ -190,6 +214,13 @@ class TimingConfig:
 
     # Geri tusundan sonra ekranin oturmasi icin beklenecek sure.
     profile_back_wait: float = 0.8
+
+    # Basili tutma suresi. Menuyu acan hareket bu.
+    long_press_seconds: float = 1.5
+
+    # Silme tamamlandiktan sonra bir sonraki kisiye gecmeden once beklenecek
+    # sure. Liste yeniden ciziliyor, erken tarama bayat koordinat verir.
+    post_remove_wait: float = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +253,10 @@ class RunConfig:
     # profil akisini kullan (liste > kisi > Arkadasligi Yonet > Arkadasi Sil).
     # --profile-flow ile acilir.
     profile_flow: bool = False
+
+    # Menuyu acmak icin satira basili tut (long press). False ise eski yol
+    # kullanilir: satira tiklanir, profil acilir, oradan menuye gidilir.
+    use_long_press: bool = True
 
     # Yalnizca bu isimlere dokun. Bos ise isim filtresi uygulanmaz.
     # --targets dosya.txt ile doldurulur; dosyayi Snapchat'in kendi veri

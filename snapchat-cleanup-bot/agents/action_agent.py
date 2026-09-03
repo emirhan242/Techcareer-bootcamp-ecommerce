@@ -124,6 +124,12 @@ class ActionAgent:
                         self.timing.profile_step_wait,
                         self.timing.profile_back_wait,
                     ),
+                    long_press_seconds=self.timing.long_press_seconds,
+                    post_remove_wait=self.timing.post_remove_wait,
+                    use_long_press=self.run.use_long_press,
+                    click_settle=self.timing.click_settle,
+                    verify_wait=self.timing.verify_wait,
+                    dialog_poll=self.timing.dialog_poll,
                 )
 
                 result.cancelled += stats.cancelled

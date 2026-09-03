@@ -212,14 +212,45 @@ işlem yapmak yerine güne yayman daha güvenli.
 
 Bazı Snapchat sürümlerinde bekleyen istekler ayrı bir ekranda değil,
 "Arkadaş Ekle > En Son Eklenenler" listesinde duruyor ve satırın sağında
-iptal butonu bulunmuyor. İsteği geri çekmek için kişinin profiline girmek
-gerekiyor:
+iptal butonu bulunmuyor. İsteği geri çekmek için satıra basılı tutup menüden
+ilerlemek gerekiyor:
 
 ```
-liste > kişi > Arkadaşlığı Yönet > Arkadaşı Sil > onay
+1. Satıra 1.5 sn BASILI TUT          → menü açılır
+2. "Arkadaşlığı Yönet"e tıkla        → ikinci menü
+3. "Kaldır"a tıkla
+4. Onay penceresinde "Arkadaşı Sil"
+5. 2 sn bekle, sonraki kişiye geç
 ```
 
-Bot bu yolu `--profile-flow` ile izler.
+Bot bu yolu `--profile-flow` ile izler. Ekranda işlenecek kişi kalmayınca
+listeyi kaydırıp devam eder.
+
+**Esnek metin yakalama.** Buton yazısı sürüme ve dile göre değişiyor
+("Kaldır", "Arkadaşı Kaldır", "Remove", "Remove Friend"). Bot önce tam
+eşleşme arar, bulamazsa içeren eşleşmeye düşer — böylece daha spesifik
+olan kazanır, gevşek arama sadece gerektiğinde devreye girer.
+
+**Yedek tıklama.** Yazıyla hiçbir şey tutmazsa menüdeki N. satıra
+koordinatla tıklar (`UIConfig.remove_fallback_row_index`).
+
+⚠️ Bu menüde "Arkadaşı Sil"in hemen üstünde **"Engelle"** ve
+**"Şikayet Et"** duruyor. Yanlış satıra basmak birini engellemek ya da
+şikayet etmek demek. Bu yüzden yedek tıklama:
+
+- yazısı okunamayan satıra basmaz (neye bastığını bilemez),
+- `UIConfig.dangerous_menu_labels` listesindeki bir satıra denk gelirse
+  işlemi iptal eder.
+
+Kapatmak için `remove_fallback_enabled = False`.
+
+**Basılı tutmayı kapatmak.** `RunConfig.use_long_press = False` yaparsan
+eski yol kullanılır: satıra normal tıklanır, profil ekranı üzerinden aynı
+menüye gidilir.
+
+⚠️ Basılı tutma akışında menü genelde "bekliyor" yazısı içermiyor, yani
+güvenlik kapısı çalışacak bir şey bulamaz. Bu yolda kimin beklediğini
+`--targets` ile vermek gerekiyor (aşağıya bak).
 
 ### Ekran bulma
 
@@ -334,6 +365,11 @@ Tüm ayarlar `config.py` içinde. Sık değiştirilenler:
 | `TimingConfig.click_delay_min/max` | 2.0 / 5.0 sn | Tıklamalar arası bekleme |
 | `TimingConfig.cooldown_every` | 15 | Kaç işlemde bir mola |
 | `TimingConfig.cooldown_seconds` | 45.0 sn | Mola süresi |
+| `TimingConfig.long_press_seconds` | 1.5 sn | Menüyü açan basılı tutma süresi |
+| `TimingConfig.post_remove_wait` | 2.0 sn | Silmeden sonra sonraki kişiye geçmeden önce |
+| `UIConfig.remove_fallback_enabled` | `True` | Metin tutmazsa koordinatla tıkla |
+| `UIConfig.remove_fallback_row_index` | 1 | Yedek tıklamada kaçıncı satır |
+| `RunConfig.use_long_press` | `True` | Menüyü basılı tutarak aç |
 | `RunConfig.max_cancellations` | 50 | Oturum başına iptal limiti |
 | `RunConfig.max_empty_scrolls` | 4 | Kaç boş kaydırmadan sonra dursun |
 

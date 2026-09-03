@@ -121,6 +121,8 @@ def handle_confirmation_dialog(
     dismiss_labels: List[str],
     wait_seconds: float = 3.0,
     logger=None,
+    poll_interval: float = 0.3,
+    settle: float = 0.6,
 ) -> str:
     """
     Tiklamadan sonra acilan onay penceresini ele alir.
@@ -140,9 +142,9 @@ def handle_confirmation_dialog(
                 if logger:
                     logger.debug(f"Onay butonu bulundu: '{label}'")
                 element.click()
-                time.sleep(0.6)
+                time.sleep(settle)
                 return "confirmed"
-        time.sleep(0.3)
+        time.sleep(poll_interval)
 
     # Onay butonu cikmadi. Ekranda beklenmedik bir pencere var mi?
     for label in dismiss_labels:
@@ -151,7 +153,7 @@ def handle_confirmation_dialog(
             if logger:
                 logger.debug(f"Beklenmedik pencere kapatiliyor: '{label}'")
             element.click()
-            time.sleep(0.5)
+            time.sleep(settle)
             return "dismissed"
 
     return "none"
@@ -173,6 +175,9 @@ def cancel_one(
     logger=None,
     dry_run: bool = True,
     dialog_wait: float = 3.0,
+    click_settle: float = 0.8,
+    verify_wait: float = 0.7,
+    dialog_poll: float = 0.3,
 ) -> bool:
     """
     Tek bir bekleyen istegi iptal eder.
@@ -192,7 +197,7 @@ def cancel_one(
 
     # --- 1) Bekleyen butona tikla ---
     device.click(x, y)
-    time.sleep(0.8)
+    time.sleep(click_settle)
 
     # --- 2/3) Onay penceresi ---
     result = handle_confirmation_dialog(
@@ -201,6 +206,8 @@ def cancel_one(
         ui_config.dismiss_labels,
         wait_seconds=dialog_wait,
         logger=logger,
+        poll_interval=dialog_poll,
+        settle=click_settle,
     )
 
     if result == "dismissed":
@@ -209,7 +216,7 @@ def cancel_one(
         return False
 
     # --- 4) Dogrulama: bu kayit hala 'bekliyor' durumunda mi? ---
-    time.sleep(0.7)
+    time.sleep(verify_wait)
     still_pending = still_pending_on_screen(device, element, ui_config)
 
     if still_pending:
@@ -245,15 +252,130 @@ def screen_texts(device) -> List[str]:
     return values
 
 
+def clickable_nodes(device) -> List[dict]:
+    """Ekrandaki tiklanabilir dugumleri yukaridan asagiya sirali dondurur."""
+    from xml.etree import ElementTree
+    import re as _re
+
+    try:
+        root = ElementTree.fromstring(device.dump_hierarchy(compressed=True))
+    except Exception:  # noqa: BLE001
+        return []
+
+    nodes = []
+    for node in root.iter("node"):
+        match = _re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", "") or "")
+        if not match:
+            continue
+        left, top, right, bottom = (int(g) for g in match.groups())
+        if right <= left or bottom <= top:
+            continue
+        nodes.append(
+            {
+                "text": (node.get("text") or "").strip(),
+                "desc": (node.get("content-desc") or "").strip(),
+                "clickable": node.get("clickable") == "true",
+                "bounds": (left, top, right, bottom),
+                "center": ((left + right) // 2, (top + bottom) // 2),
+            }
+        )
+    return sorted(nodes, key=lambda n: n["bounds"][1])
+
+
 def _click_first_label(device, labels: List[str], wait: float) -> bool:
-    """Verilen yazilardan ekranda bulunan ilkine tiklar."""
-    for label in labels:
-        element = device(textMatches=f"(?i)^{_escape(label)}$")
-        if element.exists:
-            element.click()
-            time.sleep(wait)
-            return True
+    """
+    Verilen yazilardan ekranda bulunani tiklar.
+
+    Iki asamali arama yapiyor cunku ayni buton surumden surume farkli
+    yaziliyor ("Kaldir", "Arkadasi Kaldir", "Remove Friend"):
+
+        1. Tam eslesme  -> "Kaldir" yalnizca "Kaldir"i tutar
+        2. Iceren esles -> "Kaldir", "Arkadasi Kaldir"i da tutar
+
+    Tam eslesme once denenir; boylece daha spesifik olan kazanir ve gevsek
+    arama yalnizca hicbir sey bulunamadiginda devreye girer.
+    """
+    for pattern in ("(?i)^{}$", "(?i).*{}.*"):
+        for label in labels:
+            element = device(textMatches=pattern.format(_escape(label)))
+            if element.exists:
+                element.click()
+                time.sleep(wait)
+                return True
     return False
+
+
+def _long_press(device, x: int, y: int, seconds: float) -> None:
+    """
+    Koordinata basili tutar. Menuyu acan hareket bu.
+
+    uiautomator2'de long_click var ama her surumde/adaptorde bulunmuyor;
+    yoksa ayni noktadan ayni noktaya yavas bir swipe ayni isi goruyor.
+    """
+    press = getattr(device, "long_click", None)
+    if callable(press):
+        press(x, y, seconds)
+        return
+    device.swipe(x, y, x, y, seconds)
+
+
+def click_menu_row_fallback(
+    device,
+    ui_config,
+    row_index: int,
+    wait: float,
+    logger=None,
+) -> bool:
+    """
+    Silme butonu yaziyla bulunamadiginda menudeki N. satira tiklar.
+
+    GUVENLIK: bu menude "Engelle" ve "Sikayet Et" de var. Yanlis satira
+    basmak birini engellemek ya da sikayet etmek demek ve ikisi de sessizce
+    geri alinamaz. Bu yuzden yedek tiklama:
+      - yazisi okunamayan satira basmaz (ne oldugunu bilemeyiz),
+      - tehlikeli etiket tasiyan satira basmaz.
+    Ikisinden biri olursa islem yapmadan False doner.
+    """
+    rows = [n for n in clickable_nodes(device) if n["clickable"]]
+    if not rows:
+        if logger:
+            logger.warning("Yedek tiklama: menude tiklanabilir satir yok.")
+        return False
+
+    if not 1 <= row_index <= len(rows):
+        if logger:
+            logger.warning(
+                f"Yedek tiklama: {row_index}. satir yok "
+                f"(menude {len(rows)} satir var)."
+            )
+        return False
+
+    row = rows[row_index - 1]
+    label = row["text"] or row["desc"]
+
+    if not label:
+        if logger:
+            logger.warning(
+                "Yedek tiklama iptal: satirin yazisi okunamiyor, "
+                "neye bastigimizi bilemeyiz."
+            )
+        return False
+
+    if matches_any(label, ui_config.dangerous_menu_labels) or contains_any(
+        label, ui_config.dangerous_menu_labels
+    ):
+        if logger:
+            logger.warning(
+                f"Yedek tiklama iptal: {row_index}. satir '{label}'. "
+                "Bu satira basmak silmek degil."
+            )
+        return False
+
+    if logger:
+        logger.info(f"Yedek tiklama: {row_index}. satir '{label}'")
+    device.click(*row["center"])
+    time.sleep(wait)
+    return True
 
 
 def _go_back(device, wait: float, times: int = 1) -> None:
@@ -276,20 +398,29 @@ def cancel_one_via_profile(
     open_wait: float = 2.0,
     step_wait: float = 1.0,
     back_wait: float = 0.8,
+    long_press_seconds: float = 1.5,
+    post_remove_wait: float = 2.0,
+    use_long_press: bool = True,
 ) -> str:
     """
-    Bazi Snapchat surumlerinde liste ekraninda "Bekliyor" butonu yok; istegi
-    geri cekmek icin kisinin profiline girmek gerekiyor. Bu fonksiyon o yolu
-    izler:
+    Tek bir kaydi listeden kaldirir.
 
-        1. Satira tikla, profil acilsin
-        2. GUVENLIK KAPISI: profilde "bekliyor" isareti var mi?
-           Yoksa bu kisi istegi kabul etmis gercek bir arkadastir; dokunma,
-           geri cik ve atla.
-        3. "Arkadasligi Yonet" menusunu ac
-        4. "Arkadasi Sil" butonuna bas
-        5. Onay penceresini gec
-        6. Listeye geri don
+    Akis (use_long_press=True):
+        1. Satira 1.5 saniye BASILI TUT -> menu acilir
+        2. "Arkadasligi Yonet" secenegine tikla
+        3. Acilan menude "Kaldir" butonuna tikla
+           (bulunamazsa korumali koordinat yedegi devreye girer)
+        4. Onay penceresinde "Arkadasi Sil" / "Kaldir" butonuna tikla
+        5. 2 saniye bekle, cagiran dongu bir sonraki kisiye gecsin
+
+    use_long_press=False ise 1. adim yerine satira normal tiklanir ve profil
+    ekrani uzerinden ayni menuye gidilir.
+
+    Guvenlik kapisi: ui_config.require_pending_marker aciksa, menu acildiktan
+    sonra ekranda bekleyen istegi gosteren bir yazi aranir; bulunamazsa
+    hicbir sey silinmez. Uzun basma akisinda menu genelde boyle bir yazi
+    icermez, o yuzden bu yolda kimin bekledigini --targets ile vermek gerekir
+    (bkz. README).
 
     Donus: "cancelled" | "skipped" | "failed"
     """
@@ -297,22 +428,25 @@ def cancel_one_via_profile(
     who = element.row_label or "(isim okunamadi)"
 
     if dry_run:
+        gesture = "basili tutulacak" if use_long_press else "tiklanacak"
         if logger:
-            logger.info(f"[DENEME MODU] Profil acilip iptal edilecekti -> {who}")
+            logger.info(f"[DENEME MODU] {gesture} ve kaldirilacakti -> {who}")
         return "cancelled"
 
-    if logger:
-        logger.info(f"Profil aciliyor -> {who}")
-
-    device.click(x, y)
+    # --- 1) Menuyu ac --------------------------------------------------
+    if use_long_press:
+        if logger:
+            logger.info(f"Basili tutuluyor ({long_press_seconds}sn) -> {who}")
+        _long_press(device, x, y, long_press_seconds)
+    else:
+        if logger:
+            logger.info(f"Profil aciliyor -> {who}")
+        device.click(x, y)
     time.sleep(open_wait)
 
-    texts = screen_texts(device)
-
-    # --- Guvenlik kapisi ---------------------------------------------------
-    # Liste hem bekleyenleri hem kabul etmis arkadaslari icerdigi icin,
-    # bekledigimize dair bir isaret gormeden silmiyoruz.
+    # --- Guvenlik kapisi -----------------------------------------------
     if ui_config.require_pending_marker:
+        texts = screen_texts(device)
         marker = next(
             (t for t in texts if matches_any(t, ui_config.profile_pending_markers)),
             None,
@@ -327,35 +461,53 @@ def cancel_one_via_profile(
         if logger:
             logger.debug(f"Bekleyen isareti bulundu: '{marker}' -> {who}")
 
-    # --- Menuyu ac ---------------------------------------------------------
+    # --- 2) "Arkadasligi Yonet" ----------------------------------------
     if not _click_first_label(device, ui_config.manage_friendship_labels, step_wait):
         if logger:
             logger.warning(
-                f"'Arkadasligi Yonet' butonu bulunamadi -> {who}. "
-                "Profildeki gercek yaziyi ogrenmek icin: "
-                "python main.py --inspect-profile"
+                f"'Arkadasligi Yonet' bulunamadi -> {who}. Menudeki gercek "
+                "yaziyi ogrenmek icin: python main.py --inspect-profile"
             )
         _go_back(device, back_wait)
         return "failed"
 
-    # --- Sil ---------------------------------------------------------------
-    if not _click_first_label(device, ui_config.remove_friend_labels, step_wait):
+    # --- 3) "Kaldir" ----------------------------------------------------
+    removed = _click_first_label(device, ui_config.remove_friend_labels, step_wait)
+
+    if not removed and ui_config.remove_fallback_enabled:
+        # Yazi tutmadi. Menudeki N. satira koordinatla bas - ama once
+        # o satirin gercekten silme satiri oldugundan emin ol.
         if logger:
-            logger.warning(f"'Arkadasi Sil' butonu bulunamadi -> {who}")
+            logger.warning(
+                f"'Kaldir' yaziyla bulunamadi -> {who}. Yedek tiklama deneniyor."
+            )
+        removed = click_menu_row_fallback(
+            device,
+            ui_config,
+            ui_config.remove_fallback_row_index,
+            step_wait,
+            logger=logger,
+        )
+
+    if not removed:
+        if logger:
+            logger.warning(f"'Kaldir' butonuna ulasilamadi -> {who}")
         _go_back(device, back_wait, times=2)
         return "failed"
 
-    # --- Onay --------------------------------------------------------------
+    # --- 4) Onay penceresi ----------------------------------------------
     handle_confirmation_dialog(
         device,
         ui_config.confirm_labels,
         ui_config.dismiss_labels,
         wait_seconds=dialog_wait,
         logger=logger,
+        poll_interval=step_wait,
+        settle=step_wait,
     )
 
-    # --- Listeye don -------------------------------------------------------
-    _go_back(device, back_wait, times=2)
+    # --- 5) Liste yeniden cizilsin, sonra bir sonraki kisi ---------------
+    time.sleep(post_remove_wait)
 
     if logger:
         logger.info(f"Basarili -> {who}")
@@ -450,6 +602,12 @@ def find_and_cancel_requests(
     max_iterations: int = 200,
     profile_flow: bool = False,
     profile_waits: Optional[Tuple[float, float, float]] = None,
+    long_press_seconds: float = 1.5,
+    post_remove_wait: float = 2.0,
+    use_long_press: bool = True,
+    click_settle: float = 0.8,
+    verify_wait: float = 0.7,
+    dialog_poll: float = 0.3,
 ) -> CancelStats:
     """
     O anda ekranda gorunen bekleyen istekleri sirayla iptal eder.
@@ -526,6 +684,9 @@ def find_and_cancel_requests(
                 open_wait=open_wait,
                 step_wait=step_wait,
                 back_wait=back_wait,
+                long_press_seconds=long_press_seconds,
+                post_remove_wait=post_remove_wait,
+                use_long_press=use_long_press,
             )
         else:
             ok = cancel_one(
@@ -535,6 +696,9 @@ def find_and_cancel_requests(
                 logger=logger,
                 dry_run=dry_run,
                 dialog_wait=dialog_wait,
+                click_settle=click_settle,
+                verify_wait=verify_wait,
+                dialog_poll=dialog_poll,
             )
             outcome = "cancelled" if ok else "failed"
 

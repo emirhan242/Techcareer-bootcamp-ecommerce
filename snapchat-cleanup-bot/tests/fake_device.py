@@ -217,14 +217,26 @@ class FakeProfileDevice:
         people: dict,
         pending_text: str = "Bekliyor",
         start_on_add_friends: bool = False,
+        remove_text: str = "Kaldır",
     ):
         self.people = dict(people)
         self.pending_text = pending_text
+        # Silme butonunun yazisi. Testte "tanimadigimiz bir kelime" verip
+        # koordinat yedeginin devreye girisini dogruluyoruz.
+        self.remove_text = remove_text
 
         # start_on_add_friends=True ise cihaz Snapchat'in acildigi "Arkadas
         # Ekle" ekraninda baslar; hedef listeye uc nokta menusunden gecilir.
         self.screen = "add_friends" if start_on_add_friends else "list"
-        # add_friends | overflow | list | profile | menu | dialog
+        # add_friends | overflow | list | ctx | manage | dialog
+        #   ctx    : satira basili tutunca acilan menu
+        #   manage : "Arkadasligi Yonet"ten sonraki menu
+        self.long_presses = 0
+        self.last_press_seconds = 0.0
+        self.pressed_manage_rows: List[str] = []
+        # Engelleme/sikayet gibi geri alinamaz islemler buraya yazilir;
+        # testte bu listenin BOS kalmasi gerekiyor.
+        self.harmful_actions: List[tuple] = []
         self.current: Optional[str] = None
         self.removed: List[str] = []
         self.clicks = 0
@@ -272,23 +284,29 @@ class FakeProfileDevice:
                 top = FIRST_ROW_TOP + index * ROW_HEIGHT
                 parts.append(self._node(name, 120, top, 700, top + 100))
 
-        elif self.screen == "profile":
+        elif self.screen == "ctx":
+            # Basili tutunca acilan menu.
             parts.append(self._node(self.current or "", 120, 200, 700, 300,
                                     clickable=False))
             if self.people.get(self.current) == "pending":
                 parts.append(self._node(self.pending_text, 120, 320, 400, 400,
                                         clickable=False))
-            parts.append(self._node("Arkadasligi Yonet", 120, 500, 800, 600))
+            parts.append(self._node("Arkadaşlığı Yönet", 120, 500, 800, 600))
+            parts.append(self._node("Sohbet ve Bildirim Ayarlari", 120, 620, 800, 720))
 
-        elif self.screen == "menu":
-            parts.append(self._node("Arkadasi Sil", 120, 700, 800, 800))
-            parts.append(self._node("Engelle", 120, 820, 800, 920))
+        elif self.screen == "manage":
+            # Gercek uygulamadaki sira: tehlikeli secenekler silmeden once.
+            parts.append(self._node("Daha Fazla Bilgi", 120, 400, 800, 500))
+            parts.append(self._node("Engelle", 120, 520, 800, 620))
+            parts.append(self._node("Şikayet Et", 120, 640, 800, 740))
+            parts.append(self._node(self.remove_text, 120, 760, 800, 860))
+            parts.append(self._node("Adi Duzenle", 120, 880, 800, 980))
 
         elif self.screen == "dialog":
             parts.append(self._node("Emin misin?", 60, 800, 1020, 900,
                                     clickable=False))
             parts.append(self._node("Vazgec", 100, 950, 480, 1050))
-            parts.append(self._node("Kaldir", 560, 950, 980, 1050))
+            parts.append(self._node("Arkadaşı Sil", 560, 950, 980, 1050))
 
         parts.append("</hierarchy>")
         return "\n".join(parts)
@@ -300,6 +318,23 @@ class FakeProfileDevice:
             f'bounds="[{left},{top}][{right},{bottom}]" />'
         )
 
+    def long_click(self, x: int, y: int, duration: float = 0.5) -> None:
+        """Satira basili tutmak menuyu acar. Normal tiklama acmaz."""
+        self.long_presses += 1
+        self.last_press_seconds = duration
+        if self.screen != "list":
+            return
+        name = self._row_at(y)
+        if name is None:
+            return
+        self.current = name
+        self.screen = "ctx"
+
+    def _row_at(self, y: int):
+        index = (y - FIRST_ROW_TOP) // ROW_HEIGHT
+        names = self._names()
+        return names[index] if 0 <= index < len(names) else None
+
     def click(self, x: int, y: int) -> None:
         self.clicks += 1
         if self.screen == "add_friends":
@@ -307,23 +342,46 @@ class FakeProfileDevice:
             if x >= 950 and y <= 220:
                 self.screen = "overflow"
             return
+        if self.screen == "manage":
+            # Koordinat tabanli yedek tiklama buraya duser.
+            self._click_manage_row(y)
+            return
         if self.screen != "list":
             return
-        index = (y - FIRST_ROW_TOP) // ROW_HEIGHT
-        names = self._names()
-        if not 0 <= index < len(names):
-            return
-        self.current = names[index]
-        self.screen = "profile"
+        # Listede normal tiklama menuyu ACMAZ; gercek uygulamada da profil
+        # akisi ayri. use_long_press=False yolu bunu kullanir.
+        name = self._row_at(y)
+        if name is not None:
+            self.current = name
+            self.screen = "ctx"
+
+    def _click_manage_row(self, y: int) -> None:
+        """manage menusunde koordinata gore satir secer."""
+        rows = [
+            ("Daha Fazla Bilgi", 400, 500),
+            ("Engelle", 520, 620),
+            ("Şikayet Et", 640, 740),
+            (self.remove_text, 760, 860),
+            ("Adi Duzenle", 880, 980),
+        ]
+        for label, top, bottom in rows:
+            if top <= y <= bottom:
+                self.pressed_manage_rows.append(label)
+                if label == self.remove_text:
+                    self.screen = "dialog"
+                elif label in ("Engelle", "Şikayet Et"):
+                    # Gercek uygulamada geri donusu olmayan islem.
+                    self.harmful_actions.append((self.current, label))
+                return
 
     def press(self, key: str) -> None:
         if key != "back":
             return
         self.back_presses += 1
         order = {
-            "dialog": "menu",
-            "menu": "profile",
-            "profile": "list",
+            "dialog": "manage",
+            "manage": "ctx",
+            "ctx": "list",
             "overflow": "add_friends",
         }
         self.screen = order.get(self.screen, "list")
@@ -341,26 +399,30 @@ class FakeProfileDevice:
     def _active_labels(self) -> List[str]:
         if self.screen == "overflow":
             return ["En Son Eklediğim Arkadaşlar", "Arkadaslarimi Davet Et"]
-        if self.screen == "profile":
-            return ["Arkadasligi Yonet"]
-        if self.screen == "menu":
-            return ["Arkadasi Sil", "Engelle"]
+        if self.screen == "ctx":
+            return ["Arkadaşlığı Yönet", "Sohbet ve Bildirim Ayarlari"]
+        if self.screen == "manage":
+            return [
+                "Daha Fazla Bilgi", "Engelle", "Şikayet Et",
+                self.remove_text, "Adi Duzenle",
+            ]
         if self.screen == "dialog":
-            return ["Vazgec", "Kaldir"]
+            return ["Vazgec", "Arkadaşı Sil"]
         return []
 
     def _confirm_dialog(self) -> None:
         """_Selector.click() buraya duser: ekrandaki butona basilmis sayilir."""
         if self.screen == "overflow":
             self.screen = "list"
-        elif self.screen == "profile":
-            self.screen = "menu"
-        elif self.screen == "menu":
+        elif self.screen == "ctx":
+            self.screen = "manage"
+        elif self.screen == "manage":
             self.screen = "dialog"
         elif self.screen == "dialog":
             if self.current and self.current not in self.removed:
                 self.removed.append(self.current)
-            self.screen = "profile"
+            self.screen = "list"
+            self.current = None
 
     def swipe_points(self, points, duration_per_step: float) -> None:
         self.swipes += 1
