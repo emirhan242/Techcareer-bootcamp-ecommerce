@@ -69,6 +69,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Gercek modda onay sorusunu atlar (gozetimsiz calistirma icin).",
     )
+    parser.add_argument(
+        "--usb",
+        action="store_true",
+        help="Fiziksel telefon USB ile bagli. 'adb connect' adimini atlar.",
+    )
+    parser.add_argument(
+        "--pair",
+        nargs=2,
+        metavar=("ADRES", "KOD"),
+        default=None,
+        help="Android 11+ kablosuz hata ayiklama eslestirmesi. "
+             "Ornek: --pair 192.168.1.42:37215 123456 "
+             "(telefondaki eslestirme ekranindaki adres ve 6 haneli kod)",
+    )
     return parser.parse_args()
 
 
@@ -78,6 +92,9 @@ def parse_args() -> argparse.Namespace:
 def apply_args(args: argparse.Namespace) -> None:
     if args.serial:
         CONFIG.device.serial = args.serial
+    if args.usb:
+        # USB cihazda 'adb connect' calistirmak anlamsizdir.
+        CONFIG.device.use_tcp_connect = False
     if args.max is not None:
         CONFIG.run.max_cancellations = args.max
     if args.debug:
@@ -159,6 +176,19 @@ def main() -> int:
     logger.info(f"Mod         : {'GERCEK' if args.live else 'DENEME (tiklama yok)'}")
     logger.info(f"Islem limiti: {CONFIG.run.max_cancellations or 'limitsiz'}")
 
+    # --- 0) Kablosuz eslestirme (sadece --pair verildiyse) ---
+    if args.pair:
+        from skills.adb_connect import AdbError, adb_pair
+        try:
+            adb_pair(args.pair[0], args.pair[1], logger=logger)
+        except AdbError as exc:
+            logger.error(str(exc))
+            return 1
+        logger.info(
+            "Eslestirme tamam. Simdi telefondaki 'Kablosuz hata ayiklama' "
+            "ekranindaki IP:PORT degerini --serial ile ver."
+        )
+
     # --- 1) Ortam kontrolu ---
     env_agent = EnvironmentAgent(CONFIG.device, logger)
     report = env_agent.verify()
@@ -204,8 +234,13 @@ def main() -> int:
 
     # --- 5) Ana dongu ---
     action_agent = ActionAgent(device, parser, CONFIG, logger)
-    result = action_agent.execute()
-    action_agent.report(result)
+    try:
+        result = action_agent.execute()
+        action_agent.report(result)
+    finally:
+        # Hata cikse de ekran zaman asimini normale dondur, aksi halde
+        # telefonun ekrani surekli acik kalir ve pil biter.
+        env_agent.keep_awake(False)
 
     return 0
 

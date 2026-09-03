@@ -6,5 +6,8 @@ uiautomator2>=3.2.0
 # Genelde bagimlilik olarak zaten gelir, surum sabitlemek icin acikca yazildi.
 adbutils>=2.5.0
 
-# Ekran goruntusu kaydetme (--debug modunda kullanilir).
+# Ekran goruntusu kaydetme (sadece --debug modunda kullanilir).
+# Termux uzerinde pip ile derlemesi sorunlu olabilir; orada once
+# "pkg install python-pillow" calistir, bu satiri atlayabilirsin.
+# Bot Pillow olmadan da calisir, sadece --debug ekran goruntusu alamaz.
 Pillow>=10.0.0

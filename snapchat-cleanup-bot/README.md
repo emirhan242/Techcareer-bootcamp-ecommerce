@@ -61,6 +61,13 @@ snapchat-cleanup-bot/
 
 ---
 
+## Emülatör mü, gerçek telefon mu?
+
+Aşağıdaki kurulum emülatör içindir. Botu **kendi telefonunda** (USB,
+kablosuz veya Termux ile tamamen telefon üzerinde) çalıştırmak istiyorsan
+[MOBILE.md](MOBILE.md) dosyasına bak — orası daha kısa, çünkü emülatör
+kurulumu gerekmiyor.
+
 ## Kurulum
 
 ### 1. Python paketleri
@@ -188,6 +195,8 @@ işlem yapmak yerine güne yayman daha güvenli.
 | `--serial ADRES` | Cihaz adresi, örnek `127.0.0.1:5565` |
 | `--debug` | Her taramada arayüz XML'i ve ekran görüntüsü kaydeder |
 | `--yes` | Gerçek moddaki onay sorusunu atlar |
+| `--usb` | Fiziksel telefon USB ile bağlı, `adb connect` adımını atlar |
+| `--pair ADRES KOD` | Android 11+ kablosuz hata ayıklama eşleştirmesi |
 
 Çalışmayı istediğin an `Ctrl+C` ile durdurabilirsin, bot o ana kadarki
 özeti yazdırıp güvenli şekilde kapanır.
@@ -200,7 +209,8 @@ Tüm ayarlar `config.py` içinde. Sık değiştirilenler:
 
 | Ayar | Varsayılan | Ne işe yarar |
 |---|---|---|
-| `DeviceConfig.serial` | `127.0.0.1:5555` | Emülatör ADB adresi |
+| `DeviceConfig.serial` | `auto` | Cihaz adresi. `auto` bağlı tek cihazı seçer |
+| `DeviceConfig.keep_screen_awake` | `True` | Çalışırken ekranın kapanmasını engeller |
 | `TimingConfig.click_delay_min/max` | 2.0 / 5.0 sn | Tıklamalar arası bekleme |
 | `TimingConfig.cooldown_every` | 15 | Kaç işlemde bir mola |
 | `TimingConfig.cooldown_seconds` | 45.0 sn | Mola süresi |

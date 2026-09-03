@@ -15,16 +15,26 @@ from typing import List
 # ---------------------------------------------------------------------------
 @dataclass
 class DeviceConfig:
-    # Emulator ADB adresi.
-    #   LDPlayer   -> 127.0.0.1:5555
-    #   BlueStacks -> 127.0.0.1:5555 (veya 5565 / 5585)
-    #   MEmu       -> 127.0.0.1:21503
-    # Fiziksel telefon kullaniyorsan buraya "adb devices" ciktisindaki
-    # seri numarasini yaz (ornek: "R58M12ABCDE").
-    serial: str = "127.0.0.1:5555"
+    # Cihaz adresi.
+    #
+    #   "auto"                -> bagli tek cihazi otomatik sec (ONERILEN)
+    #                            Hem USB telefonda hem emulatorde calisir.
+    #   "127.0.0.1:5555"      -> LDPlayer / BlueStacks
+    #   "127.0.0.1:21503"     -> MEmu
+    #   "R58M12ABCDE"         -> USB ile bagli fiziksel telefon (adb devices)
+    #   "192.168.1.42:39123"  -> Kablosuz hata ayiklama ile telefon
+    #
+    # Komut satirindan --serial ile de gecici olarak degistirebilirsin.
+    serial: str = "auto"
 
-    # TCP/IP uzerinden baglanilacak mi? Fiziksel USB cihazda False yap.
+    # TCP/IP uzerinden 'adb connect' calistirilsin mi?
+    # Serial icinde ":" yoksa (USB cihaz) bu ayar zaten atlanir,
+    # yani "auto" veya USB seri numarasi ile ugrasmana gerek yok.
     use_tcp_connect: bool = True
+
+    # Calisma boyunca ekranin kapanmasi engellensin mi?
+    # Fiziksel telefonda True olmali: ekran kapanirsa bot arayuzu okuyamaz.
+    keep_screen_awake: bool = True
 
     # Snapchat paket adi. Klon/beta surumlerde farkli olabilir.
     package_name: str = "com.snapchat.android"

@@ -27,7 +27,9 @@ from skills.adb_connect import (
     adb_connect,
     ensure_app_running,
     list_devices,
+    resolve_serial,
     run_adb,
+    set_stay_awake,
 )
 
 
@@ -51,6 +53,8 @@ class EnvironmentAgent:
         self.config = config          # AppConfig.device
         self.logger = logger
         self.device = None
+        # 'auto' cozuldukten sonraki gercek seri numarasi
+        self.resolved_serial: str = config.serial
 
     # -- Adim 1: adb var mi -------------------------------------------------
     def check_adb_binary(self) -> bool:
@@ -69,8 +73,11 @@ class EnvironmentAgent:
     # -- Adim 2 + 3: cihaza baglan -----------------------------------------
     def connect(self) -> Optional[object]:
         try:
+            # "auto" gibi degerleri once gercek seri numarasina cevir; sonraki
+            # adb komutlari (-s <serial>) bu cozulmus degeri kullanacak.
+            self.resolved_serial = resolve_serial(self.config.serial, logger=self.logger)
             self.device = adb_connect(
-                serial=self.config.serial,
+                serial=self.resolved_serial,
                 use_tcp_connect=self.config.use_tcp_connect,
                 timeout=self.config.connect_timeout,
                 logger=self.logger,
@@ -123,6 +130,17 @@ class EnvironmentAgent:
 
         return True
 
+    # -- Ekrani acik tutma (fiziksel telefonda kritik) ---------------------
+    def keep_awake(self, enable: bool = True) -> bool:
+        """
+        Calisma boyunca ekranin kapanmasini engeller.
+        Telefon ekrani kapanirsa arayuz agaci okunamaz ve bot yarida kalir.
+        Is bitince main.py bunu enable=False ile geri alir.
+        """
+        if not getattr(self.config, "keep_screen_awake", False):
+            return False
+        return set_stay_awake(self.resolved_serial, enable, logger=self.logger)
+
     # -- Adim 5: Snapchat kurulu mu / on planda mi -------------------------
     def check_app(self) -> tuple:
         """
@@ -137,7 +155,7 @@ class EnvironmentAgent:
         try:
             installed = package in self.device.app_list()
         except Exception:  # noqa: BLE001 - yedek olarak pm list packages kullan
-            code, out, _ = run_adb(["-s", self.config.serial, "shell", "pm", "list", "packages", package])
+            code, out, _ = run_adb(["-s", self.resolved_serial, "shell", "pm", "list", "packages", package])
             installed = code == 0 and package in out
 
         if not installed:
@@ -170,6 +188,9 @@ class EnvironmentAgent:
 
         if not self.ensure_screen_on():
             self.logger.warning("Ekran durumu dogrulanamadi, yine de devam ediliyor.")
+
+        # Uzun surecek bir islem: ekranin kendiliginden kapanmasini engelle.
+        self.keep_awake(True)
 
         installed, foreground = self.check_app()
         if not installed:

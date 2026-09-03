@@ -155,6 +155,39 @@ def main() -> int:
                          result.stop_reason))
 
     # ---------------------------------------------------------------
+    print("\n8) Cihaz secimi (--serial auto)")
+    import skills.adb_connect as adb
+
+    original = adb.list_devices
+    try:
+        # Tek cihaz bagli: otomatik secilmeli
+        adb.list_devices = lambda: [("R58M12ABCDE", "device")]
+        results.append(check("Tek USB cihaz otomatik secildi",
+                             adb.resolve_serial("auto") == "R58M12ABCDE"))
+
+        # Acik adres verildiyse dokunulmamali
+        results.append(check("Elle verilen adres degistirilmedi",
+                             adb.resolve_serial("127.0.0.1:5555") == "127.0.0.1:5555"))
+
+        # Yetkilendirilmemis cihaz secilmemeli
+        adb.list_devices = lambda: [("R58M12ABCDE", "unauthorized")]
+        try:
+            adb.resolve_serial("auto")
+            results.append(check("Yetkisiz cihaz reddedildi", False))
+        except adb.AdbError:
+            results.append(check("Yetkisiz cihaz reddedildi", True))
+
+        # Birden fazla cihazda net hata verilmeli
+        adb.list_devices = lambda: [("emulator-5554", "device"), ("R58M12ABCDE", "device")]
+        try:
+            adb.resolve_serial("auto")
+            results.append(check("Coklu cihazda hata verildi", False))
+        except adb.AdbError as exc:
+            results.append(check("Coklu cihazda hata verildi", "--serial" in str(exc)))
+    finally:
+        adb.list_devices = original
+
+    # ---------------------------------------------------------------
     passed = sum(1 for r in results if r)
     total = len(results)
     print("\n" + "=" * 55)

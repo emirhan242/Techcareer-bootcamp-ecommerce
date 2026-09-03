@@ -109,6 +109,73 @@ def list_devices() -> List[Tuple[str, str]]:
     return devices
 
 
+def resolve_serial(serial: str, logger=None) -> str:
+    """
+    Cihaz adresini cozer.
+
+    serial "auto" ise: bagli tek cihazi otomatik secer. Fiziksel telefonda
+    seri numarasi her cihazda farkli oldugu icin config'e elle yazmak yerine
+    bunu kullanmak daha pratik.
+
+    Birden fazla cihaz varsa hangisinin secilecegi belirsiz oldugundan
+    hata verir ve listeyi gosterir.
+    """
+    if serial and serial.lower() != "auto":
+        return serial
+
+    devices = [d for d in list_devices() if d[1] == "device"]
+
+    if not devices:
+        raise AdbError(
+            "Bagli cihaz bulunamadi.\n"
+            "Fiziksel telefon icin kontrol et:\n"
+            "  - Gelistirici secenekleri acik mi?\n"
+            "  - USB hata ayiklama acik mi?\n"
+            "  - Telefonda cikan 'Bu bilgisayara izin ver' penceresini onayladin mi?\n"
+            "  - Kablo veri aktarimi destekliyor mu? (sadece sarj kablosu ise gorunmez)"
+        )
+
+    if len(devices) > 1:
+        listing = "\n".join(f"  - {s}  ({st})" for s, st in devices)
+        raise AdbError(
+            f"Birden fazla cihaz bagli, hangisi kullanilacak belirsiz:\n{listing}\n"
+            "--serial ile birini sec."
+        )
+
+    chosen = devices[0][0]
+    if logger:
+        logger.info(f"Cihaz otomatik secildi: {chosen}")
+    return chosen
+
+
+def adb_pair(address: str, code: str, logger=None) -> bool:
+    """
+    Android 11+ 'Kablosuz hata ayiklama' eslestirmesi.
+
+    Telefonda: Gelistirici secenekleri > Kablosuz hata ayiklama >
+    'Cihazi eslestirme koduyla esle' ekranindaki adres ve 6 haneli kodu ver.
+
+    address : "192.168.1.42:37215" bicimindeki ESLESTIRME adresi
+              (dikkat: bu, baglanti portundan farklidir)
+    code    : ekranda gorunen 6 haneli kod
+    """
+    log = logger.info if logger else print
+    log(f"Eslestiriliyor: {address}")
+
+    _, out, err = run_adb(["pair", address, code], timeout=60.0)
+    combined = f"{out} {err}"
+
+    if "Successfully paired" in combined:
+        log("Eslestirme basarili.")
+        return True
+
+    raise AdbError(
+        f"Eslestirme basarisiz: {combined.strip() or 'cikti yok'}\n"
+        "Kontrol et: Eslestirme ekrani hala acik mi? (kapaninca kod gecersiz olur)\n"
+        "PC ve telefon ayni Wi-Fi agindaymis olmali."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Ana skill fonksiyonu
 # ---------------------------------------------------------------------------
@@ -129,7 +196,11 @@ def adb_connect(
     log = logger.info if logger else print
     warn = logger.warning if logger else print
 
+    # --- 0) "auto" ise bagli cihazi bul ------------------------------------
+    serial = resolve_serial(serial, logger=logger)
+
     # --- 1) TCP baglantisi -------------------------------------------------
+    # Seri numarasinda ":" yoksa bu bir USB cihazidir, 'adb connect' gerekmez.
     if use_tcp_connect and ":" in serial:
         log(f"ADB TCP baglantisi kuruluyor: {serial}")
         code, out, err = run_adb(["connect", serial])
@@ -162,10 +233,14 @@ def adb_connect(
     if state != "device":
         raise AdbError(
             f"Cihaz '{serial}' hazir duruma gelmedi (son durum: {state}).\n"
-            "Cozum onerileri:\n"
-            "  - Emulator ayarlarindan 'ADB Debugging' / 'Android Hata Ayiklama' ac\n"
+            "Emulator icin:\n"
+            "  - Ayarlardan 'ADB Debugging' / 'Android Hata Ayiklama' ac\n"
             "  - 'adb kill-server' ardindan 'adb start-server' calistir\n"
-            "  - Emulatorun kendi adb surumu ile sistem adb surumu cakisiyor olabilir"
+            "Fiziksel telefon icin:\n"
+            "  - Durum 'unauthorized' ise telefondaki 'USB hata ayiklamaya izin ver'\n"
+            "    penceresini onayla ('Bu bilgisayardan her zaman izin ver' isaretli)\n"
+            "  - Durum 'offline' ise kabloyu cikarip tak, ekran kilidini ac\n"
+            "  - USB baglanti modunu 'Dosya aktarimi (MTP)' yap"
         )
 
     log(f"Cihaz hazir: {serial}")
@@ -197,6 +272,38 @@ def adb_connect(
         f"Android SDK: {info.get('sdkInt')}"
     )
     return device
+
+
+def set_stay_awake(serial: str, enable: bool, logger=None) -> bool:
+    """
+    Ekranin kendiliginden kapanmasini engeller.
+
+    Fiziksel telefonda bu SART: ekran kapanirsa arayuz agaci okunamaz ve bot
+    ortada kalir. Emulatorde genelde gerekmez ama zarari yok.
+
+    'svc power stayon' kalici bir ayar degildir, cihaz yeniden baslatilinca
+    sifirlanir. Yine de is bitince enable=False ile geri almak iyi olur.
+
+    enable=True  -> sarjdayken (USB / kablosuz / AC) ekran acik kalir
+    enable=False -> normal davranisa doner
+    """
+    value = "usb,ac,wireless" if enable else "false"
+    code, out, err = run_adb(["-s", serial, "shell", "svc", "power", "stayon", value])
+
+    ok = code == 0
+    if logger:
+        if ok:
+            logger.info(
+                "Ekran acik kalacak sekilde ayarlandi."
+                if enable else "Ekran zaman asimi normale donduruldu."
+            )
+        else:
+            logger.warning(
+                f"Ekran ayari degistirilemedi: {err or out}. "
+                "Telefonun ekran kapanma suresini elle uzat "
+                "(Ayarlar > Ekran > Ekran zaman asimi)."
+            )
+    return ok
 
 
 def ensure_app_running(device, package_name: str, logger=None, wait: float = 6.0) -> bool:
