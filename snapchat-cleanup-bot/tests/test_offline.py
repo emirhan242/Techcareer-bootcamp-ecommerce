@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agents.action_agent import ActionAgent          # noqa: E402
 from agents.ui_parser_agent import UIParserAgent     # noqa: E402
 from config import AppConfig                         # noqa: E402
-from tests.fake_device import FakeDevice             # noqa: E402
+from tests.fake_device import FakeDevice, FakeProfileDevice   # noqa: E402
 from utils.logger import get_logger                  # noqa: E402
 
 
@@ -33,6 +33,9 @@ def fast_config(dry_run: bool, max_cancellations: int = 0) -> AppConfig:
     cfg.timing.dialog_wait = 0.05
     cfg.timing.scroll_settle_min = 0.001
     cfg.timing.scroll_settle_max = 0.002
+    cfg.timing.profile_open_wait = 0.001
+    cfg.timing.profile_step_wait = 0.001
+    cfg.timing.profile_back_wait = 0.001
     cfg.run.dry_run = dry_run
     cfg.run.max_cancellations = max_cancellations
     cfg.run.max_empty_scrolls = 2
@@ -186,6 +189,88 @@ def main() -> int:
             results.append(check("Coklu cihazda hata verildi", "--serial" in str(exc)))
     finally:
         adb.list_devices = original
+
+    # ---------------------------------------------------------------
+    print("\n9) Profil akisi: liste > profil > Arkadasligi Yonet > Arkadasi Sil")
+    # Listede bekleyen istekler ve kabul etmis gercek arkadaslar bir arada.
+    people = {
+        "bekleyen_01": "pending",
+        "arkadas_01": "friend",
+        "bekleyen_02": "pending",
+        "arkadas_02": "friend",
+        "bekleyen_03": "pending",
+    }
+    device = FakeProfileDevice(people=dict(people))
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    result = agent.execute()
+
+    results.append(
+        check(
+            "Bekleyen istekler iptal edildi",
+            sorted(device.removed) == ["bekleyen_01", "bekleyen_02", "bekleyen_03"],
+            f"silinen={sorted(device.removed)}",
+        )
+    )
+    results.append(
+        check(
+            "Gercek arkadaslara dokunulmadi",
+            "arkadas_01" not in device.removed and "arkadas_02" not in device.removed,
+            f"silinen={sorted(device.removed)}",
+        )
+    )
+    results.append(
+        check("Iptal sayaci dogru", result.cancelled == 3, f"iptal={result.cancelled}")
+    )
+    results.append(
+        check(
+            "Arkadaslar atlandi olarak sayildi",
+            result.skipped >= 2,
+            f"atlanan={result.skipped}",
+        )
+    )
+    results.append(
+        check("Listeye geri donuldu", device.screen == "list", f"ekran={device.screen}")
+    )
+
+    # ---------------------------------------------------------------
+    print("\n10) Profil akisi guvenlik kapisi: isaret yoksa hicbir sey silinmez")
+    # Snapchat surumu farkli bir kelime kullaniyorsa (config'de olmayan),
+    # bot hicbir kaydi bekleyen sayamaz ve HICBIRINI silmemelidir.
+    device = FakeProfileDevice(
+        people={"a": "pending", "b": "pending"}, pending_text="TanimsizDurum"
+    )
+    cfg = fast_config(dry_run=False)
+    cfg.run.profile_flow = True
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    result = agent.execute()
+
+    results.append(
+        check(
+            "Taninmayan durumda hicbir kayit silinmedi",
+            device.removed == [],
+            f"silinen={device.removed}",
+        )
+    )
+    results.append(
+        check("Iptal sayaci sifir", result.cancelled == 0, f"iptal={result.cancelled}")
+    )
+
+    # ---------------------------------------------------------------
+    print("\n11) Profil akisi deneme modu: hicbir sey silinmemeli")
+    device = FakeProfileDevice(people=dict(people))
+    cfg = fast_config(dry_run=True)
+    cfg.run.profile_flow = True
+    parser = UIParserAgent(device, cfg.ui, cfg.run, logger)
+    agent = ActionAgent(device, parser, cfg, logger)
+    result = agent.execute()
+
+    results.append(
+        check("Deneme modunda silme yok", device.removed == [], f"silinen={device.removed}")
+    )
 
     # ---------------------------------------------------------------
     passed = sum(1 for r in results if r)

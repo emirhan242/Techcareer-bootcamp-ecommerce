@@ -191,6 +191,62 @@ class UIParserAgent:
         result = sorted(unique.values(), key=lambda e: e.bounds[1])
         return result
 
+    def find_person_rows(self) -> List[PendingElement]:
+        """
+        Kisi listesi ekranindaki satirlari dondurur (profil akisi icin).
+
+        find_pending() ile farki: orada satirin sagindaki "Bekliyor" butonu
+        araniyor. Bazi Snapchat surumlerinde oyle bir buton yok, satirda
+        sadece kisinin adi var ve istegi geri cekmek icin profile girmek
+        gerekiyor. Bu fonksiyon o satirlarin kendisini tespit eder.
+
+        Isim gibi gorunmeyen metinler (baslik, sekme adi, buton yazisi)
+        elenir; geriye kalanlar yukaridan asagiya siralanir.
+        """
+        xml = self.dump()
+        nodes = self._nodes(xml)
+
+        if self.run.save_hierarchy:
+            self.save_debug_dump(prefix="rows", xml=xml)
+
+        noise = (
+            self.ui.pending_labels
+            + self.ui.confirm_labels
+            + self.ui.dismiss_labels
+            + self.ui.screen_titles
+            + self.ui.manage_friendship_labels
+            + self.ui.remove_friend_labels
+        )
+
+        rows: List[PendingElement] = []
+        for node in nodes:
+            text = node["text"] or node["desc"]
+            if not text or len(text) > 40:
+                continue
+            if matches_any(text, noise):
+                continue
+            # Isim satiri, tek harflik artiklardan ve ince ayiriclardan buyuk olmali.
+            if node["height"] < self.ui.min_button_height:
+                continue
+            rows.append(
+                PendingElement(
+                    text=text,
+                    bounds=node["bounds"],
+                    resource_id=node["resource_id"],
+                    row_label=text,
+                )
+            )
+
+        # Ic ice dugumler ayni satiri birden fazla uretebilir; dikey konuma
+        # gore tekillestir.
+        unique: Dict[str, PendingElement] = {}
+        for element in rows:
+            row_key = str(element.bounds[1] // 20)
+            if row_key not in unique:
+                unique[row_key] = element
+
+        return sorted(unique.values(), key=lambda e: e.bounds[1])
+
     def _find_row_name(self, button: Dict, nodes: List[Dict]) -> str:
         """
         Butonun solunda, ayni yatay bantta duran metni bulur.

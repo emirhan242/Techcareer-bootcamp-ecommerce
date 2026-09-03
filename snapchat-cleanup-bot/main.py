@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from agents.action_agent import ActionAgent
 from agents.environment_agent import EnvironmentAgent
@@ -83,6 +84,25 @@ def parse_args() -> argparse.Namespace:
              "Ornek: --pair 192.168.1.42:37215 123456 "
              "(telefondaki eslestirme ekranindaki adres ve 6 haneli kod)",
     )
+    parser.add_argument(
+        "--profile-flow",
+        action="store_true",
+        help="Liste ekraninda 'Bekliyor' butonu olmayan Snapchat surumleri icin. "
+             "Kisinin profiline girip 'Arkadasligi Yonet > Arkadasi Sil' "
+             "yolunu izler. Guvenlik icin profilde bekleyen isareti "
+             "gormedigi kisiyi atlar.",
+    )
+    parser.add_argument(
+        "--inspect-profile",
+        nargs="?",
+        type=int,
+        const=1,
+        default=None,
+        metavar="SIRA",
+        help="Tani: listedeki N. kisinin profilini acar, ekrandaki tum "
+             "metinleri yazar ve geri doner. Hicbir sey silmez. "
+             "Profil akisindaki gercek buton yazilarini ogrenmek icin.",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +119,8 @@ def apply_args(args: argparse.Namespace) -> None:
         CONFIG.run.max_cancellations = args.max
     if args.debug:
         CONFIG.run.save_hierarchy = True
+    if args.profile_flow:
+        CONFIG.run.profile_flow = True
     # --live verilmedikce her zaman deneme modunda kal.
     CONFIG.run.dry_run = not args.live
 
@@ -163,6 +185,70 @@ def run_scan(parser: UIParserAgent, logger) -> int:
     return 0
 
 
+def run_inspect_profile(parser: UIParserAgent, device, index: int, logger) -> int:
+    """
+    Listedeki N. kisinin profilini acar, ekrandaki her metni yazar ve geri
+    doner. Hicbir sey silmez.
+
+    Amaci: profil akisinin ("Arkadasligi Yonet" > "Arkadasi Sil") kendi
+    Snapchat surumunde hangi yazilari kullandigini ve bekleyen bir istegi
+    kabul edilmis bir arkadastan neyin ayirdigini ogrenmek. Bu iki bilgi
+    olmadan bot listedeki gercek arkadaslari da silebilir, o yuzden
+    --profile-flow kullanmadan once bunu calistir.
+    """
+    from skills.find_and_cancel_requests import screen_texts
+
+    banner(logger, "PROFIL INCELEME - hicbir sey silinmeyecek")
+
+    rows = parser.find_person_rows()
+    if not rows:
+        logger.error("Listede kisi satiri bulunamadi.")
+        logger.error("Once 'En Son Eklenenler' listesini ekrana getir.")
+        return 1
+
+    logger.info(f"Listede {len(rows)} satir goruldu:")
+    for position, row in enumerate(rows, start=1):
+        logger.info(f"  {position}. {row.row_label}")
+
+    if index < 1 or index > len(rows):
+        logger.error(f"Gecersiz sira: {index}. 1 ile {len(rows)} arasinda olmali.")
+        return 1
+
+    target = rows[index - 1]
+    logger.info("")
+    logger.info(f"{index}. kisinin profili aciliyor: {target.row_label}")
+
+    device.click(*target.center)
+    time.sleep(2.5)
+
+    texts = screen_texts(device)
+    logger.info("")
+    logger.info("Profil ekranindaki metinler:")
+    for text in texts:
+        logger.info(f"   - {text!r}")
+
+    path = parser.save_debug_dump(prefix="profile")
+    if path:
+        logger.info(f"Arayuz dokumu kaydedildi: {path}")
+
+    logger.info("")
+    logger.info("Listeye donuluyor.")
+    try:
+        device.press("back")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Geri donulemedi: {exc}")
+
+    logger.info("")
+    logger.info("Simdi yukaridaki listeden su ikisini bul ve config.py'ye yaz:")
+    logger.info("  1. Menuyu acan buton  -> UIConfig.manage_friendship_labels")
+    logger.info("  2. Bekleyen istegi kabul edilmis arkadastan ayiran yazi")
+    logger.info("     -> UIConfig.profile_pending_markers")
+    logger.info("")
+    logger.info("Ikinci madde onemli: o yazi olmadan bot bekleyen istekle")
+    logger.info("gercek arkadasi ayirt edemez ve ikisini de siler.")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Ana akis
 # ---------------------------------------------------------------------------
@@ -204,6 +290,9 @@ def main() -> int:
 
     if args.scan:
         return run_scan(parser, logger)
+
+    if args.inspect_profile is not None:
+        return run_inspect_profile(parser, device, args.inspect_profile, logger)
 
     # --- 3) Dogru ekranda miyiz? ---
     ok, reason = parser.detect_screen()

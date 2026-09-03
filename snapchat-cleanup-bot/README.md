@@ -197,9 +197,70 @@ işlem yapmak yerine güne yayman daha güvenli.
 | `--yes` | Gerçek moddaki onay sorusunu atlar |
 | `--usb` | Fiziksel telefon USB ile bağlı, `adb connect` adımını atlar |
 | `--pair ADRES KOD` | Android 11+ kablosuz hata ayıklama eşleştirmesi |
+| `--profile-flow` | Listede "Bekliyor" butonu olmayan sürümler için profil akışı |
+| `--inspect-profile [N]` | Tanı: N. kişinin profilini açıp metinlerini yazar |
 
 Çalışmayı istediğin an `Ctrl+C` ile durdurabilirsin, bot o ana kadarki
 özeti yazdırıp güvenli şekilde kapanır.
+
+---
+
+## Listede "Bekliyor" butonu yoksa
+
+Bazı Snapchat sürümlerinde bekleyen istekler ayrı bir ekranda değil,
+"Arkadaş Ekle > En Son Eklenenler" listesinde duruyor ve satırın sağında
+iptal butonu bulunmuyor. İsteği geri çekmek için kişinin profiline girmek
+gerekiyor:
+
+```
+liste > kişi > Arkadaşlığı Yönet > Arkadaşı Sil > onay
+```
+
+Bot bu yolu `--profile-flow` ile izler.
+
+### Önce tehlikeyi anla
+
+O liste **bekleyen istekleri ve isteği kabul etmiş gerçek arkadaşları bir
+arada** gösteriyor, ikisi de aynı menüden siliniyor. Ayrım yapmadan çalışan
+bir bot arkadaşlarını da siler ve bu geri alınamaz.
+
+Bot bu yüzden profili açtıktan sonra bekleyen olduğunu gösteren bir yazı
+görmeden silmiyor; göremezse geri çıkıp o kişiyi atlıyor
+(`UIConfig.profile_pending_markers`, `require_pending_marker`).
+
+### Kullanım sırası
+
+**1. Profildeki gerçek yazıları öğren.** Listeyi ekrana getir ve:
+
+```bash
+python main.py --inspect-profile
+```
+
+İlk kişinin profilini açar, ekrandaki her metni yazar, hiçbir şey silmez.
+Çıktıda iki şeyi ara:
+
+- Menüyü açan butonun yazısı → `UIConfig.manage_friendship_labels`
+- Bekleyen isteği kabul edilmiş arkadaştan ayıran yazı
+  → `UIConfig.profile_pending_markers`
+
+İkisini de bilinen bir bekleyen kişi ve bilinen bir arkadaş üzerinde
+doğrula (`--inspect-profile 2`, `--inspect-profile 3` ...). İkinci maddeyi
+bulamazsan **çalıştırma**: bot bekleyeni arkadaştan ayırt edemez.
+
+**2. Deneme modunda çalıştır.** Kimin işleneceğini loglardan kontrol et:
+
+```bash
+python main.py --profile-flow
+```
+
+**3. Küçük bir partiyle başla.**
+
+```bash
+python main.py --profile-flow --live --max 5
+```
+
+İlk beş kişiyi silmesini izle, doğru kişiler olduğunu Snapchat'ten teyit et,
+sonra limiti artır.
 
 ---
 

@@ -224,6 +224,144 @@ def cancel_one(
     return True
 
 
+# ---------------------------------------------------------------------------
+# Profil akisi: liste > kisi > "Arkadasligi Yonet" > "Arkadasi Sil" > onay
+# ---------------------------------------------------------------------------
+def screen_texts(device) -> List[str]:
+    """Ekrandaki tum text ve content-desc degerlerini duz liste olarak dondurur."""
+    from xml.etree import ElementTree
+
+    try:
+        root = ElementTree.fromstring(device.dump_hierarchy(compressed=True))
+    except Exception:  # noqa: BLE001
+        return []
+
+    values = []
+    for node in root.iter("node"):
+        for key in ("text", "content-desc"):
+            value = (node.get(key) or "").strip()
+            if value:
+                values.append(value)
+    return values
+
+
+def _click_first_label(device, labels: List[str], wait: float) -> bool:
+    """Verilen yazilardan ekranda bulunan ilkine tiklar."""
+    for label in labels:
+        element = device(textMatches=f"(?i)^{_escape(label)}$")
+        if element.exists:
+            element.click()
+            time.sleep(wait)
+            return True
+    return False
+
+
+def _go_back(device, wait: float, times: int = 1) -> None:
+    """Geri tusuna basar. Profilden listeye donmek icin kullanilir."""
+    for _ in range(times):
+        try:
+            device.press("back")
+        except Exception:  # noqa: BLE001 - geri basilamiyorsa dongu tikanmasin
+            return
+        time.sleep(wait)
+
+
+def cancel_one_via_profile(
+    device,
+    element: PendingElement,
+    ui_config,
+    logger=None,
+    dry_run: bool = True,
+    dialog_wait: float = 3.0,
+    open_wait: float = 2.0,
+    step_wait: float = 1.0,
+    back_wait: float = 0.8,
+) -> str:
+    """
+    Bazi Snapchat surumlerinde liste ekraninda "Bekliyor" butonu yok; istegi
+    geri cekmek icin kisinin profiline girmek gerekiyor. Bu fonksiyon o yolu
+    izler:
+
+        1. Satira tikla, profil acilsin
+        2. GUVENLIK KAPISI: profilde "bekliyor" isareti var mi?
+           Yoksa bu kisi istegi kabul etmis gercek bir arkadastir; dokunma,
+           geri cik ve atla.
+        3. "Arkadasligi Yonet" menusunu ac
+        4. "Arkadasi Sil" butonuna bas
+        5. Onay penceresini gec
+        6. Listeye geri don
+
+    Donus: "cancelled" | "skipped" | "failed"
+    """
+    x, y = element.center
+    who = element.row_label or "(isim okunamadi)"
+
+    if dry_run:
+        if logger:
+            logger.info(f"[DENEME MODU] Profil acilip iptal edilecekti -> {who}")
+        return "cancelled"
+
+    if logger:
+        logger.info(f"Profil aciliyor -> {who}")
+
+    device.click(x, y)
+    time.sleep(open_wait)
+
+    texts = screen_texts(device)
+
+    # --- Guvenlik kapisi ---------------------------------------------------
+    # Liste hem bekleyenleri hem kabul etmis arkadaslari icerdigi icin,
+    # bekledigimize dair bir isaret gormeden silmiyoruz.
+    if ui_config.require_pending_marker:
+        marker = next(
+            (t for t in texts if matches_any(t, ui_config.profile_pending_markers)),
+            None,
+        )
+        if marker is None:
+            if logger:
+                logger.info(
+                    f"Atlandi (bekleyen isareti yok, arkadas olabilir) -> {who}"
+                )
+            _go_back(device, back_wait)
+            return "skipped"
+        if logger:
+            logger.debug(f"Bekleyen isareti bulundu: '{marker}' -> {who}")
+
+    # --- Menuyu ac ---------------------------------------------------------
+    if not _click_first_label(device, ui_config.manage_friendship_labels, step_wait):
+        if logger:
+            logger.warning(
+                f"'Arkadasligi Yonet' butonu bulunamadi -> {who}. "
+                "Profildeki gercek yaziyi ogrenmek icin: "
+                "python main.py --inspect-profile"
+            )
+        _go_back(device, back_wait)
+        return "failed"
+
+    # --- Sil ---------------------------------------------------------------
+    if not _click_first_label(device, ui_config.remove_friend_labels, step_wait):
+        if logger:
+            logger.warning(f"'Arkadasi Sil' butonu bulunamadi -> {who}")
+        _go_back(device, back_wait, times=2)
+        return "failed"
+
+    # --- Onay --------------------------------------------------------------
+    handle_confirmation_dialog(
+        device,
+        ui_config.confirm_labels,
+        ui_config.dismiss_labels,
+        wait_seconds=dialog_wait,
+        logger=logger,
+    )
+
+    # --- Listeye don -------------------------------------------------------
+    _go_back(device, back_wait, times=2)
+
+    if logger:
+        logger.info(f"Basarili -> {who}")
+    return "cancelled"
+
+
 def still_pending_on_screen(device, element: PendingElement, ui_config) -> bool:
     """
     Iptal isleminden sonra kaydin hala 'bekliyor' durumunda olup olmadigini
@@ -310,6 +448,8 @@ def find_and_cancel_requests(
     already_processed: Optional[set] = None,
     remaining_budget: Optional[int] = None,
     max_iterations: int = 200,
+    profile_flow: bool = False,
+    profile_waits: Optional[Tuple[float, float, float]] = None,
 ) -> CancelStats:
     """
     O anda ekranda gorunen bekleyen istekleri sirayla iptal eder.
@@ -329,6 +469,10 @@ def find_and_cancel_requests(
     remaining_budget  : Bu cagride en fazla kac iptal yapilabilecegi.
     max_iterations    : Guvenlik siniri. Beklenmedik bir durumda sonsuz
                         donguye girilmesini engeller.
+    profile_flow      : True ise satirdaki butona tiklamak yerine kisinin
+                        profiline girilip menuden iptal edilir. Liste
+                        ekraninda "Bekliyor" butonu olmayan Snapchat
+                        surumleri icin.
 
     Donus: CancelStats
     """
@@ -370,17 +514,35 @@ def find_and_cancel_requests(
         seen.add(target.key)
         stats.processed_keys.add(target.key)
 
-        ok = cancel_one(
-            device,
-            target,
-            ui_config,
-            logger=logger,
-            dry_run=dry_run,
-            dialog_wait=dialog_wait,
-        )
+        if profile_flow:
+            open_wait, step_wait, back_wait = profile_waits or (2.0, 1.0, 0.8)
+            outcome = cancel_one_via_profile(
+                device,
+                target,
+                ui_config,
+                logger=logger,
+                dry_run=dry_run,
+                dialog_wait=dialog_wait,
+                open_wait=open_wait,
+                step_wait=step_wait,
+                back_wait=back_wait,
+            )
+        else:
+            ok = cancel_one(
+                device,
+                target,
+                ui_config,
+                logger=logger,
+                dry_run=dry_run,
+                dialog_wait=dialog_wait,
+            )
+            outcome = "cancelled" if ok else "failed"
 
-        if ok:
+        if outcome == "cancelled":
             stats.cancelled += 1
+        elif outcome == "skipped":
+            # Profil akisinda guvenlik kapisi bu kisiyi eledi (bekleyen degil).
+            stats.skipped += 1
         else:
             stats.failed += 1
 

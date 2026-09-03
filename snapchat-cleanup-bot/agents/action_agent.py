@@ -100,9 +100,17 @@ class ActionAgent:
                     break
 
                 # --- Ekrani tara ve bulunanlari iptal et ---
+                # Profil akisinda satirin sagindaki buton yerine satirin
+                # kendisi hedefleniyor, o yuzden tarayici da degisiyor.
+                scan = (
+                    self.parser.find_person_rows
+                    if self.run.profile_flow
+                    else self.parser.find_pending
+                )
+
                 stats: CancelStats = find_and_cancel_requests(
                     device=self.device,
-                    find_pending=self.parser.find_pending,
+                    find_pending=scan,
                     ui_config=self.ui,
                     logger=self.logger,
                     dry_run=self.run.dry_run,
@@ -110,6 +118,12 @@ class ActionAgent:
                     on_action=self.pace.after_action,
                     already_processed=self.processed,
                     remaining_budget=budget,
+                    profile_flow=self.run.profile_flow,
+                    profile_waits=(
+                        self.timing.profile_open_wait,
+                        self.timing.profile_step_wait,
+                        self.timing.profile_back_wait,
+                    ),
                 )
 
                 result.cancelled += stats.cancelled

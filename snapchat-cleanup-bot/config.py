@@ -82,14 +82,54 @@ class UIConfig:
         "Bekleyen Istekler", "Bekleyen İstekler", "Gonderilen Istekler",
         "Gönderilen İstekler", "Arkadas Ekle", "Arkadaş Ekle", "Arkadaslarim",
         "Arkadaşlarım", "Hizli Ekle", "Hızlı Ekle",
+        "En Son Eklenenler", "En Son Eklediklerim", "Son Eklenenler",
         "Pending Requests", "Sent Requests", "Add Friends", "My Friends",
-        "Quick Add",
+        "Quick Add", "Recently Added",
     ])
 
     # Bir elemanin "tiklanabilir buton" sayilmasi icin gereken minimum
     # genislik/yukseklik (piksel). Cok kucuk metin parcalarini eler.
     min_button_width: int = 40
     min_button_height: int = 30
+
+    # -- Profil akisi (bazi Snapchat surumleri) ---------------------------
+    # Bazi surumlerde liste ekraninda "Bekliyor" butonu hic yok. Istegi geri
+    # cekmek icin kisinin profiline girip menuden ilerlemek gerekiyor:
+    #   liste > kisi > "Arkadasligi Yonet" > "Arkadasi Sil" > onay
+    # Asagidaki listeler o akistaki buton yazilarini tanimlar.
+
+    # Profildeki menuyu acan buton.
+    manage_friendship_labels: List[str] = field(default_factory=lambda: [
+        "Arkadasligi Yonet", "Arkadaşlığı Yönet", "Arkadasligi yonet",
+        "Manage Friendship", "Manage",
+    ])
+
+    # Menu icindeki silme/geri cekme butonu.
+    remove_friend_labels: List[str] = field(default_factory=lambda: [
+        "Arkadasi Sil", "Arkadaşı Sil", "Arkadasi Kaldir", "Arkadaşı Kaldır",
+        "Arkadasliktan Cikar", "Arkadaşlıktan Çıkar", "Istegi Geri Cek",
+        "İsteği Geri Çek",
+        "Remove Friend", "Unadd", "Cancel Request", "Remove",
+    ])
+
+    # DIKKAT - GUVENLIK KAPISI.
+    # "En Son Eklenenler" listesinde hem istegi kabul etmis arkadaslar hem de
+    # hala bekleyenler yan yana duruyor. Ikisi de ayni menuden siliniyor, yani
+    # ayrim yapmadan calisan bir bot gercek arkadaslari da siler.
+    # Bot bu yuzden profili actiktan sonra asagidaki isaretlerden birini
+    # gormeden SILMEZ; goremezse geri cikip o kisiyi atlar.
+    # Kendi Snapchat surumundeki gercek yaziyi ogrenmek icin:
+    #     python main.py --inspect-profile
+    # komutunu calistir, profil ekranindaki tum metinleri listeler.
+    profile_pending_markers: List[str] = field(default_factory=lambda: [
+        "Bekliyor", "Beklemede", "Istek Gonderildi", "İstek Gönderildi",
+        "Eklendi", "Davet Gonderildi", "Davet Gönderildi",
+        "Pending", "Requested", "Request Sent", "Added",
+    ])
+
+    # Guvenlik kapisi kapatilabilir ama VARSAYILAN OLARAK ACIK kalmali.
+    # False yapmak "listedeki herkesi sil" demektir.
+    require_pending_marker: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +153,16 @@ class TimingConfig:
     # Kaydirma sonrasi ekranin oturmasi icin beklenecek sure araligi.
     scroll_settle_min: float = 0.8
     scroll_settle_max: float = 1.8
+
+    # -- Profil akisi beklemeleri (--profile-flow) ------------------------
+    # Profil ekraninin acilmasi icin beklenecek sure.
+    profile_open_wait: float = 2.0
+
+    # Menu / buton gecisleri arasinda beklenecek sure.
+    profile_step_wait: float = 1.0
+
+    # Geri tusundan sonra ekranin oturmasi icin beklenecek sure.
+    profile_back_wait: float = 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +190,11 @@ class RunConfig:
 
     # Her adimda hierarchy dokumu kaydedilsin mi? (yavaslatir, sadece debug)
     save_hierarchy: bool = False
+
+    # Liste ekraninda "Bekliyor" butonu olmayan Snapchat surumleri icin
+    # profil akisini kullan (liste > kisi > Arkadasligi Yonet > Arkadasi Sil).
+    # --profile-flow ile acilir.
+    profile_flow: bool = False
 
 
 # ---------------------------------------------------------------------------
