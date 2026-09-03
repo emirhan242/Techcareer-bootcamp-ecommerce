@@ -4,8 +4,9 @@ Emülatör kurmadan, botu doğrudan kendi Android telefonunda çalıştırmanın
 üç yolu var. Aşağıdakiler zorluk sırasına göre dizildi.
 
 Önce genel not: uiautomator2 Android'in kendi test altyapısını (UiAutomator)
-kullanıyor. Bu **iPhone'da yok**, dolayısıyla iOS'ta bu bot çalışmaz. iPhone
-için tek yol, ayrı bir Android cihaz veya emülatörde ikinci bir oturum açmak.
+kullanıyor. Bu iPhone'da yok, dolayısıyla bu bot iOS'ta doğrudan çalışmaz.
+Ayrıntı ve çözüm için aşağıdaki [iPhone kullanıyorsanız](#iphone-kullaniyorsaniz)
+bölümüne bak.
 
 ---
 
@@ -199,6 +200,35 @@ gerekmez.
 **Snapchat'in arayüzü.** Emülatördeki ile telefondaki Snapchat sürümü farklı
 olabilir, buton yazıları değişebilir. Bu yüzden her yeni cihazda önce
 `--scan` çalıştır, algılanan etiketleri kontrol et.
+
+---
+
+## iPhone kullanıyorsanız
+
+iOS'ta UiAutomator'ın karşılığı **XCUITest**, ona da ancak cihaza imzalanmış
+bir test taşıyıcısı (**WebDriverAgent**) kurarak erişilebiliyor. Bu bir Mac,
+Xcode ve Apple Developer hesabı gerektiriyor; ücretsiz hesapta imza 7 günde
+bir düşüyor. Teknik olarak mümkün ama bu iş için ödenen bedel yüksek.
+
+**Gerek yok, çünkü bekleyen istekler sunucu tarafında tutuluyor.** Hangi
+cihazdan iptal ettiğin fark etmez. Yapılacak:
+
+1. PC'de emülatörü kur (ana [README.md](README.md) kurulum bölümü).
+2. Emülatördeki Snapchat'e **aynı hesapla** giriş yap.
+3. Botu normal şekilde çalıştır.
+4. İş bitince iPhone'daki Snapchat'i aşağı çekerek yenile — liste temizlenmiş
+   olacak.
+
+Yeni bir cihazdan giriş yaptığın için Snapchat SMS veya e-posta ile doğrulama
+isteyebilir, iPhone'unu yanında tut. Emülatördeki oturumu işi bitince
+kapatabilirsin.
+
+İleride gerçekten iPhone üzerinde çalıştırmak istersen mimari buna hazır:
+skill'ler `device` nesnesini dışarıdan alıyor ve ondan yalnızca `info`,
+`dump_hierarchy()`, `click(x, y)`, `swipe_points()` ve `device(textMatches=...)`
+bekliyor. `facebook-wda` kütüphanesini bu arayüze çeviren bir adaptör yazmak
+yeterli; `find_and_cancel_requests` ve `human_like_scroll` hiç değişmez.
+Snapchat'in iOS bundle kimliği `com.toyopagroup.picaboo`.
 
 ---
 
