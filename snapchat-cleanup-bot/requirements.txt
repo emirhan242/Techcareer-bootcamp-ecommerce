@@ -1,0 +1,13 @@
+# Android arayuzunu ADB uzerinden kontrol eden ana kutuphane.
+# Cihaza otomatik olarak ATX-agent kurar ve XML arayuz agacini okur.
+uiautomator2>=3.2.0
+
+# uiautomator2'nin cihazla haberlesmek icin kullandigi ADB istemcisi.
+# Genelde bagimlilik olarak zaten gelir, surum sabitlemek icin acikca yazildi.
+adbutils>=2.5.0
+
+# Ekran goruntusu kaydetme (sadece --debug modunda kullanilir).
+# Termux uzerinde pip ile derlemesi sorunlu olabilir; orada once
+# "pkg install python-pillow" calistir, bu satiri atlayabilirsin.
+# Bot Pillow olmadan da calisir, sadece --debug ekran goruntusu alamaz.
+Pillow>=10.0.0

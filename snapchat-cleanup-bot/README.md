@@ -1,0 +1,418 @@
+# Snapchat Bekleyen İstek Temizleyici
+
+Snapchat'te gönderilmiş ama henüz kabul edilmemiş (bekleyen) arkadaşlık
+isteklerini, Android emülatörü üzerinden ADB ile toplu olarak iptal eden
+modüler bir otomasyon aracı.
+
+## Önce okunması gereken uyarı
+
+Snapchat kullanım şartları üçüncü parti otomasyona izin vermez. Bu araç
+kendi hesabında, kendi gönderdiğin istekleri geri çekmek için tasarlandı;
+yine de hesabın geçici veya kalıcı olarak kısıtlanma riski her zaman vardır.
+Ana hesabını riske atmak istemiyorsan önce ikincil bir hesapta dene.
+Varsayılan ayarlar bilinçli olarak yavaştır, bunları hızlandırma.
+
+---
+
+## Mimari
+
+Proje iki katmana ayrıldı. **Skill**'ler tek bir işi yapan, durum tutmayan
+yapı taşları. **Agent**'lar bu yapı taşlarını sırayla kullanan karar
+katmanı. Böylece Snapchat arayüzü değiştiğinde sadece ilgili skill
+güncelleniyor, akış mantığına dokunmuyorsun.
+
+| Katman | Dosya | Görevi |
+|---|---|---|
+| Agent | `agents/environment_agent.py` | ADB, emülatör ve Snapchat kontrolü |
+| Agent | `agents/ui_parser_agent.py` | Ekranı XML olarak okuyup butonları bulma |
+| Agent | `agents/action_agent.py` | Tıklama, kaydırma ve zamanlama döngüsü |
+| Skill | `skills/adb_connect.py` | Cihaza bağlanma |
+| Skill | `skills/find_and_cancel_requests.py` | İstek bulma ve iptal etme |
+| Skill | `skills/human_like_scroll.py` | Doğal kaydırma hareketi |
+| Skill | `skills/random_delay_and_cooldown.py` | Bekleme ve mola mantığı |
+| Skill | `skills/open_recent_added.py` | "En Son Eklenenler" listesine gitme |
+
+### Klasör yapısı
+
+```
+snapchat-cleanup-bot/
+├── main.py                              # Giriş noktası
+├── config.py                            # Tüm ayarlar
+├── requirements.txt
+├── README.md
+├── agents/
+│   ├── __init__.py
+│   ├── environment_agent.py
+│   ├── ui_parser_agent.py
+│   └── action_agent.py
+├── skills/
+│   ├── __init__.py
+│   ├── adb_connect.py
+│   ├── find_and_cancel_requests.py
+│   ├── human_like_scroll.py
+│   ├── open_recent_added.py
+│   └── random_delay_and_cooldown.py
+├── utils/
+│   ├── __init__.py
+│   └── logger.py
+└── tests/
+    ├── __init__.py
+    ├── fake_device.py                   # Sahte cihaz simülasyonu
+    └── test_offline.py                  # Emülatörsüz doğrulama testleri
+```
+
+---
+
+## Emülatör mü, gerçek telefon mu?
+
+Aşağıdaki kurulum emülatör içindir. Botu **kendi telefonunda** (USB,
+kablosuz veya Termux ile tamamen telefon üzerinde) çalıştırmak istiyorsan
+[MOBILE.md](MOBILE.md) dosyasına bak — orası daha kısa, çünkü emülatör
+kurulumu gerekmiyor.
+
+## Kurulum
+
+### 1. Python paketleri
+
+```bash
+cd snapchat-cleanup-bot
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### 2. Android Platform Tools (adb)
+
+`adb` komutunun PATH'te olması gerekiyor.
+
+Windows:
+1. https://developer.android.com/tools/releases/platform-tools adresinden indir.
+2. `C:\platform-tools` klasörüne çıkart.
+3. Sistem Ortam Değişkenleri > Path > Yeni > `C:\platform-tools` ekle.
+4. Yeni bir terminal aç ve doğrula:
+
+```bash
+adb version
+```
+
+macOS / Linux:
+
+```bash
+brew install android-platform-tools     # macOS
+sudo apt install adb                    # Debian / Ubuntu
+```
+
+### 3. Emülatör ayarları
+
+**LDPlayer:**
+1. Ayarlar (üst sağdaki üç çizgi) > Diğer ayarlar.
+2. **ADB hata ayıklama** seçeneğini "Yerel bağlantıya izin ver" yap.
+3. Çözünürlüğü telefon moduna al: 540x960 veya 720x1280, DPI 240.
+4. Emülatörü yeniden başlat.
+5. Varsayılan ADB portu: `127.0.0.1:5555`
+
+**BlueStacks 5:**
+1. Ayarlar > Gelişmiş > **Android hata ayıklama köprüsü (ADB)** açık.
+2. Aynı ekranda yazan port numarasını not al (genelde 5555, bazen 5565/5585).
+3. Ayarlar > Ekran > Telefon (Portrait) modunu seç.
+
+Bağlantıyı doğrula:
+
+```bash
+adb connect 127.0.0.1:5555
+adb devices
+```
+
+Çıktıda cihazın `device` durumunda görünmesi gerekiyor. `offline` yazıyorsa:
+
+```bash
+adb kill-server
+adb start-server
+adb connect 127.0.0.1:5555
+```
+
+### 4. Snapchat hazırlığı
+
+1. Emülatör içindeki Play Store'dan Snapchat'i kur.
+2. Hesabına giriş yap ve uygulamayı en az bir kez elle aç.
+3. uiautomator2 servisini cihaza kur:
+
+```bash
+python -m uiautomator2 init
+```
+
+---
+
+## Kullanım
+
+Üç adımı sırayla uygula. İlk çalıştırmada doğrudan `--live` kullanma.
+
+### Adım 1: Tanı modu
+
+Emülatörde bekleyen istekler listesini ekrana getir, sonra:
+
+```bash
+python main.py --scan
+```
+
+Bu komut hiçbir şeye tıklamaz. Ekrandaki tüm yazıları listeler ve hangi
+kayıtları "bekleyen istek" olarak algıladığını gösterir.
+
+Eğer hiçbir şey bulamazsa: çıktıdaki metin listesinden istek butonunun
+gerçek yazısını bul ve `config.py` içindeki `UIConfig.pending_labels`
+listesine ekle. Aynısı onay penceresi butonu için `confirm_labels` ile
+geçerli.
+
+### Adım 2: Deneme modu
+
+```bash
+python main.py
+```
+
+Bot listeyi baştan sona gezer, her adımda ne yapacağını loglar ama hiçbir
+yere tıklamaz. Logları oku, doğru kişileri hedeflediğinden emin ol.
+
+### Adım 3: Gerçek mod
+
+```bash
+python main.py --live --max 30
+```
+
+`--max` ile oturum başına iptal sayısını sınırla. İlk gün 20-30, sorun
+çıkmazsa sonraki günlerde kademeli olarak artır. Tek seferde yüzlerce
+işlem yapmak yerine güne yayman daha güvenli.
+
+### Tüm seçenekler
+
+| Seçenek | Açıklama |
+|---|---|
+| `--scan` | Sadece ekranı okur, hiçbir işlem yapmaz |
+| `--live` | Gerçek mod. Verilmezse asla tıklama yapılmaz |
+| `--max N` | Bu oturumda en fazla N istek iptal et (`0` = limitsiz) |
+| `--serial ADRES` | Cihaz adresi, örnek `127.0.0.1:5565` |
+| `--debug` | Her taramada arayüz XML'i ve ekran görüntüsü kaydeder |
+| `--yes` | Gerçek moddaki onay sorusunu atlar |
+| `--usb` | Fiziksel telefon USB ile bağlı, `adb connect` adımını atlar |
+| `--pair ADRES KOD` | Android 11+ kablosuz hata ayıklama eşleştirmesi |
+| `--profile-flow` | Listede "Bekliyor" butonu olmayan sürümler için profil akışı |
+| `--inspect-profile [N]` | Tanı: N. kişinin profilini açıp metinlerini yazar |
+| `--targets DOSYA` | Yalnızca dosyadaki isimlere dokun (önerilen yöntem) |
+
+Çalışmayı istediğin an `Ctrl+C` ile durdurabilirsin, bot o ana kadarki
+özeti yazdırıp güvenli şekilde kapanır.
+
+---
+
+## Listede "Bekliyor" butonu yoksa
+
+Bazı Snapchat sürümlerinde bekleyen istekler ayrı bir ekranda değil,
+"Arkadaş Ekle > En Son Eklenenler" listesinde duruyor ve satırın sağında
+iptal butonu bulunmuyor. İsteği geri çekmek için satıra basılı tutup menüden
+ilerlemek gerekiyor:
+
+```
+1. Satıra 1.5 sn BASILI TUT          → menü açılır
+2. "Arkadaşlığı Yönet"e tıkla        → ikinci menü
+3. "Kaldır"a tıkla
+4. Onay penceresinde "Arkadaşı Sil"
+5. 2 sn bekle, sonraki kişiye geç
+```
+
+Bot bu yolu `--profile-flow` ile izler. Ekranda işlenecek kişi kalmayınca
+listeyi kaydırıp devam eder.
+
+**Esnek metin yakalama.** Buton yazısı sürüme ve dile göre değişiyor
+("Kaldır", "Arkadaşı Kaldır", "Remove", "Remove Friend"). Bot önce tam
+eşleşme arar, bulamazsa içeren eşleşmeye düşer — böylece daha spesifik
+olan kazanır, gevşek arama sadece gerektiğinde devreye girer.
+
+**Yedek tıklama.** Yazıyla hiçbir şey tutmazsa menüdeki N. satıra
+koordinatla tıklar (`UIConfig.remove_fallback_row_index`).
+
+⚠️ Bu menüde "Arkadaşı Sil"in hemen üstünde **"Engelle"** ve
+**"Şikayet Et"** duruyor. Yanlış satıra basmak birini engellemek ya da
+şikayet etmek demek. Bu yüzden yedek tıklama:
+
+- yazısı okunamayan satıra basmaz (neye bastığını bilemez),
+- `UIConfig.dangerous_menu_labels` listesindeki bir satıra denk gelirse
+  işlemi iptal eder.
+
+Kapatmak için `remove_fallback_enabled = False`.
+
+**Basılı tutmayı kapatmak.** `RunConfig.use_long_press = False` yaparsan
+eski yol kullanılır: satıra normal tıklanır, profil ekranı üzerinden aynı
+menüye gidilir.
+
+⚠️ Basılı tutma akışında menü genelde "bekliyor" yazısı içermiyor, yani
+güvenlik kapısı çalışacak bir şey bulamaz. Bu yolda kimin beklediğini
+`--targets` ile vermek gerekiyor (aşağıya bak).
+
+### Ekran bulma
+
+Snapchat "Arkadaş Ekle" ekranında açılıyor. Oradaki kişiler **önerilerdir**
+(yanlarında sarı "+ Ekle" butonu var), senin istek gönderdiklerin değil.
+Doğru liste sağ üstteki üç nokta menüsünün altında:
+
+```
+Arkadaş Ekle > ⋯ > En Son Eklediğim Arkadaşlar
+```
+
+Bot `--profile-flow` ve `--inspect-profile` çalıştırıldığında bu geçişi
+kendisi yapmaya çalışır (`skills/open_recent_added.py`). Üç nokta butonunu
+bulamazsa uyarır; o zaman listeyi elle açıp komutu tekrar çalıştır.
+
+### Önerilen yol: Snapchat'in kendi verisini kullan
+
+Arayüz bir kaydın bekleyen istek mi yoksa isteği kabul etmiş bir arkadaş mı
+olduğunu güvenilir şekilde söylemiyor — ikisi aynı listede, aynı menüyle
+siliniyor. Arayüzden tahmin etmek yerine kaynağa gidiyoruz: Snapchat bu
+ayrımı kendi veri dökümünde açıkça veriyor.
+
+**1. Dökümü indir**
+
+1. [accounts.snapchat.com](https://accounts.snapchat.com) → giriş yap
+2. **Verilerim** (My Data) → **Verilerimi Gönder**
+3. E-postana gelen zip'i indir
+
+**2. Bekleyenleri çıkar**
+
+```bash
+python tools/parse_snapchat_export.py mydata.zip
+```
+
+Bu, `hedefler.txt` üretir — her satırda bir isim. Dosyayı açıp gözden geçir,
+silinmesini istemediğin varsa satırı sil.
+
+**3. Deneme modunda çalıştır**
+
+```bash
+python main.py --profile-flow --targets hedefler.txt
+```
+
+Bot artık listedeki **hiçbir başka kişiye dokunmaz**; kimin beklediği
+Snapchat'in kendi verisinden geldiği için arayüzden tahmin etmesi de
+gerekmez.
+
+**4. Gerçek mod, küçük partiyle**
+
+```bash
+python main.py --profile-flow --targets hedefler.txt --live --max 5
+```
+
+---
+
+### Hedef listesi olmadan: tehlikeyi anla
+
+O liste **bekleyen istekleri ve isteği kabul etmiş gerçek arkadaşları bir
+arada** gösteriyor, ikisi de aynı menüden siliniyor. Ayrım yapmadan çalışan
+bir bot arkadaşlarını da siler ve bu geri alınamaz.
+
+Bot bu yüzden profili açtıktan sonra bekleyen olduğunu gösteren bir yazı
+görmeden silmiyor; göremezse geri çıkıp o kişiyi atlıyor
+(`UIConfig.profile_pending_markers`, `require_pending_marker`).
+
+`--targets` kullanmıyorsan bot bekleyeni arkadaştan ayırt etmek zorunda ve
+bunu profildeki bir yazıya bakarak yapıyor. O yazının sürümünden sürüme
+değiştiği için önce bulman gerekiyor:
+
+**1. Profildeki gerçek yazıları öğren.** Listeyi ekrana getir ve:
+
+```bash
+python main.py --inspect-profile
+```
+
+İlk kişinin profilini açar, ekrandaki her metni yazar, hiçbir şey silmez.
+Çıktıda iki şeyi ara:
+
+- Menüyü açan butonun yazısı → `UIConfig.manage_friendship_labels`
+- Bekleyen isteği kabul edilmiş arkadaştan ayıran yazı
+  → `UIConfig.profile_pending_markers`
+
+İkisini de bilinen bir bekleyen kişi ve bilinen bir arkadaş üzerinde
+doğrula (`--inspect-profile 2`, `--inspect-profile 3` ...). İkinci maddeyi
+bulamazsan **çalıştırma**: bot bekleyeni arkadaştan ayırt edemez.
+
+**2. Deneme modunda çalıştır.** Kimin işleneceğini loglardan kontrol et:
+
+```bash
+python main.py --profile-flow
+```
+
+**3. Küçük bir partiyle başla.**
+
+```bash
+python main.py --profile-flow --live --max 5
+```
+
+İlk beş kişiyi silmesini izle, doğru kişiler olduğunu Snapchat'ten teyit et,
+sonra limiti artır.
+
+---
+
+## Ayarlar
+
+Tüm ayarlar `config.py` içinde. Sık değiştirilenler:
+
+| Ayar | Varsayılan | Ne işe yarar |
+|---|---|---|
+| `DeviceConfig.serial` | `auto` | Cihaz adresi. `auto` bağlı tek cihazı seçer |
+| `DeviceConfig.keep_screen_awake` | `True` | Çalışırken ekranın kapanmasını engeller |
+| `TimingConfig.click_delay_min/max` | 2.0 / 5.0 sn | Tıklamalar arası bekleme |
+| `TimingConfig.cooldown_every` | 15 | Kaç işlemde bir mola |
+| `TimingConfig.cooldown_seconds` | 45.0 sn | Mola süresi |
+| `TimingConfig.long_press_seconds` | 1.5 sn | Menüyü açan basılı tutma süresi |
+| `TimingConfig.post_remove_wait` | 2.0 sn | Silmeden sonra sonraki kişiye geçmeden önce |
+| `UIConfig.remove_fallback_enabled` | `True` | Metin tutmazsa koordinatla tıkla |
+| `UIConfig.remove_fallback_row_index` | 1 | Yedek tıklamada kaçıncı satır |
+| `RunConfig.use_long_press` | `True` | Menüyü basılı tutarak aç |
+| `RunConfig.max_cancellations` | 50 | Oturum başına iptal limiti |
+| `RunConfig.max_empty_scrolls` | 4 | Kaç boş kaydırmadan sonra dursun |
+
+---
+
+## Testler
+
+Emülatör olmadan, sahte bir cihaz üzerinde tüm mantığı doğrular:
+
+```bash
+python -m tests.test_offline
+```
+
+Ayrıştırma, deneme modu, onay penceresi olan ve olmayan iptal akışları,
+işlem limiti, İngilizce arayüz ve boş liste durumu test edilir.
+
+---
+
+## Sorun giderme
+
+**`adb bulunamadı`**
+Platform Tools kurulmamış veya PATH'te değil. Alternatif olarak
+`skills/adb_connect.py` içindeki `_COMMON_ADB_PATHS` listesine kendi
+`adb.exe` yolunu ekle.
+
+**`127.0.0.1:5555 adresine bağlanılamadı`**
+Emülatör kapalı, ADB hata ayıklama ayarı kapalı veya port farklı.
+`adb devices` çıktısındaki adresi `--serial` ile ver.
+
+**Cihaz `offline` görünüyor**
+Emülatörün kendi adb sürümü ile sistemdeki sürüm çakışıyor.
+`adb kill-server && adb start-server` çalıştır, sonra tekrar bağlan.
+
+**Bot hiçbir istek bulamıyor**
+Snapchat arayüzü güncellenmiş olabilir. `--scan` çalıştır, çıktıdaki
+gerçek buton yazısını `config.py > UIConfig.pending_labels` listesine ekle.
+
+**Tıklıyor ama "doğrulanamadı" diyor**
+Onay penceresinin buton yazısı listede yok. `--debug` ile çalıştır,
+`debug_dumps/` klasöründeki XML dosyasından gerçek yazıyı bul ve
+`confirm_labels` listesine ekle.
+
+**Liste ortasında takılıyor**
+`RunConfig.max_empty_scrolls` değerini artır veya
+`TimingConfig.scroll_settle_max` süresini uzat. Yavaş emülatörlerde
+liste, kaydırma bitmeden okunuyor olabilir.
